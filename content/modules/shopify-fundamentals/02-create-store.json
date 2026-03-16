@@ -1,0 +1,10 @@
+{
+  "id": "02-create-store",
+  "title": "Créer une boutique",
+  "description": "Création d'un compte Shopify, configuration de base (domaine, devise, livraison) et premiers pas dans l'admin.",
+  "duration": "45 min",
+  "videoEmbedUrl": "https://drive.google.com/file/d/2EXAMPLE_PLACEHOLDER/preview",
+  "quizSheetId": "",
+  "missionId": null,
+  "content": "Nous verrons comment créer un compte Shopify (essai gratuit), configurer les paramètres de base de la boutique (nom, devise, zone géographique), et naviguer dans l'interface d'administration."
+}

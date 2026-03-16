@@ -1,0 +1,10 @@
+{
+  "id": "01-intro",
+  "title": "Introduction à Shopify",
+  "description": "Découverte de l'écosystème Shopify : qu'est-ce qu'une boutique en ligne, les concepts clés (produits, collections, thèmes), et le back-office.",
+  "duration": "30 min",
+  "videoEmbedUrl": "https://drive.google.com/file/d/1EXAMPLE_PLACEHOLDER/preview",
+  "quizSheetId": "",
+  "missionId": null,
+  "content": "Shopify est une plateforme e-commerce complète qui permet de créer et gérer une boutique en ligne sans compétences techniques avancées. Vous y retrouverez : l'admin pour gérer produits et commandes, le thème pour l'apparence, et les apps pour étendre les fonctionnalités."
+}

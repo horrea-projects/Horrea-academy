@@ -1,0 +1,13 @@
+{
+  "id": "01-mission-brief",
+  "title": "Rédiger un brief projet et un planning",
+  "context": "Horrea doit lancer un projet de refonte e-commerce pour un client « Sport & Co ». Vous êtes chef de projet junior. On vous demande de produire un brief projet et un rétroplanning sur 8 semaines (design, intégration Shopify, contenu, recette, mise en production).",
+  "objective": "Produire un document de brief (objectifs, périmètre, livrables, acteurs) et un planning type (jalons et phases) pour un projet Shopify.",
+  "instructions": [
+    "Rédiger un court brief projet (1 page) : objectifs, périmètre (pages, fonctionnalités), livrables attendus, acteurs (client, Horrea, rôles).",
+    "Construire un rétroplanning sur 8 semaines avec les phases : cadrage, design, intégration, contenu, recette, mise en production.",
+    "Indiquer les points de validation client (jalons) et les livrables à chaque phase.",
+    "Soumettre le document (PDF ou lien Google Doc) à votre formateur ou le déposer dans l'espace indiqué."
+  ],
+  "deliverable": "Document brief + planning (PDF ou lien partagé). Une fois réalisé, marquer la mission comme complétée dans la plateforme pour enregistrer la progression."
+}

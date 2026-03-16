@@ -1,0 +1,10 @@
+{
+  "id": "01-gestion-projet",
+  "title": "Gestion de projet e-commerce",
+  "description": "Les spécificités d'un projet e-commerce : livrables, jalons et acteurs.",
+  "duration": "45 min",
+  "videoEmbedUrl": "https://drive.google.com/file/d/5EXAMPLE_PLACEHOLDER/preview",
+  "quizSheetId": "",
+  "missionId": null,
+  "content": "Un projet e-commerce sur Shopify implique plusieurs phases : cadrage, design, intégration, contenu, tests et mise en production. Nous verrons les rôles (client, chef de projet, développeur, rédacteur) et les livrables attendus."
+}

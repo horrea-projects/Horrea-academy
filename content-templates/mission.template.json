@@ -1,0 +1,12 @@
+{
+  "id": "01-identifiant-mission",
+  "title": "Titre de la mission",
+  "context": "Contexte : situation, rôle de l'apprenant, demande du client ou du formateur.",
+  "objective": "Objectif à atteindre en une phrase (livrable attendu).",
+  "instructions": [
+    "Étape 1 à réaliser.",
+    "Étape 2 à réaliser.",
+    "Étape 3 à réaliser."
+  ],
+  "deliverable": "Description du livrable à remettre (format, lien, capture d'écran, etc.)."
+}

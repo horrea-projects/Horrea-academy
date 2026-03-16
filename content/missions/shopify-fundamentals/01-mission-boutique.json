@@ -1,0 +1,14 @@
+{
+  "id": "01-mission-boutique",
+  "title": "Créer une boutique test",
+  "context": "Vous êtes en stage chez Horrea. Votre responsable vous demande de créer une boutique Shopify de démonstration pour un client fictif « La Maison du Thé ». L'objectif est de valider que vous maîtrisez la création de compte, l'ajout de quelques produits et la personnalisation basique du thème.",
+  "objective": "Livrer l'URL d'une boutique Shopify en mode test (ou essai gratuit) contenant au moins 3 produits et un thème personnalisé (couleurs ou texte de la page d'accueil).",
+  "instructions": [
+    "Créer un compte Shopify (essai gratuit si besoin).",
+    "Configurer le nom de la boutique et les paramètres de base (devise EUR).",
+    "Ajouter au moins 3 produits (nom, description, prix, image si possible).",
+    "Choisir un thème et personnaliser au moins la page d'accueil (titre ou couleurs).",
+    "Noter l'URL de la boutique et la communiquer à votre formateur (ou la renseigner dans le suivi de progression)."
+  ],
+  "deliverable": "URL de la boutique Shopify (ex. https://la-maison-du-the.myshopify.com) + capture d'écran de la page d'accueil si demandé."
+}

@@ -1,0 +1,12 @@
+{
+  "id": "01-identifiant-module",
+  "title": "Titre du module",
+  "description": "Courte description du module affichée en en-tête.",
+  "duration": "30 min",
+  "videoEmbedUrl": "https://drive.google.com/file/d/VOTRE_ID_VIDEO/preview",
+  "documentEmbedUrl": "https://docs.google.com/document/d/VOTRE_ID_DOC/pub?embedded=true",
+  "presentationEmbedUrl": "https://docs.google.com/presentation/d/VOTRE_ID_SLIDES/embed",
+  "quizSheetId": "",
+  "missionId": null,
+  "content": "Texte libre optionnel : résumé, points clés ou consignes à afficher sous la vidéo. Laisser vide si pas de texte."
+}

@@ -1,0 +1,48 @@
+{
+  "course": {
+    "slug": "mon-slug-formation",
+    "title": "Titre de la formation",
+    "description": "Description détaillée de la formation.",
+    "duration": "~4h",
+    "moduleIds": ["01-premier-module", "02-deuxieme-module"],
+    "missionIds": ["01-ma-mission"],
+    "categoryId": "shopify",
+    "addedAt": "2025-01-20"
+  },
+  "modules": [
+    {
+      "id": "01-premier-module",
+      "title": "Titre du module 1",
+      "description": "Description du module 1.",
+      "duration": "30 min",
+      "videoEmbedUrl": "https://drive.google.com/file/d/ID_VIDEO/preview",
+      "documentEmbedUrl": "",
+      "presentationEmbedUrl": "",
+      "quizSheetId": "",
+      "missionId": null,
+      "content": "Texte optionnel du module 1."
+    },
+    {
+      "id": "02-deuxieme-module",
+      "title": "Titre du module 2",
+      "description": "Description du module 2.",
+      "duration": "45 min",
+      "videoEmbedUrl": "https://drive.google.com/file/d/ID_VIDEO/preview",
+      "documentEmbedUrl": "",
+      "presentationEmbedUrl": "",
+      "quizSheetId": "",
+      "missionId": null,
+      "content": "Texte optionnel du module 2."
+    }
+  ],
+  "missions": [
+    {
+      "id": "01-ma-mission",
+      "title": "Titre de la mission",
+      "context": "Contexte de la mission.",
+      "objective": "Objectif à atteindre.",
+      "instructions": ["Étape 1", "Étape 2"],
+      "deliverable": "Livrable attendu."
+    }
+  ]
+}

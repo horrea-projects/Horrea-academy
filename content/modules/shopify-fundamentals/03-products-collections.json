@@ -1,0 +1,10 @@
+{
+  "id": "03-products-collections",
+  "title": "Produits et collections",
+  "description": "Ajout de produits, variantes, images, et organisation en collections.",
+  "duration": "1h",
+  "videoEmbedUrl": "https://drive.google.com/file/d/3EXAMPLE_PLACEHOLDER/preview",
+  "quizSheetId": "",
+  "missionId": null,
+  "content": "Gestion du catalogue : créer des produits (titre, description, prix, images), gérer les variantes (taille, couleur), et organiser les produits dans des collections manuelles ou automatiques."
+}

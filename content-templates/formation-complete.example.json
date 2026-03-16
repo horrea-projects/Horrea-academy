@@ -1,0 +1,66 @@
+{
+  "course": {
+    "slug": "exemple-introduction-nextjs",
+    "title": "Introduction à Next.js (exemple)",
+    "description": "Cette formation d'exemple vous guide à travers les bases de Next.js : App Router, composants serveur et client, et routage. Vous pouvez l'importer telle quelle pour tester le processus, ou la dupliquer et modifier le contenu.",
+    "descriptionShort": "Découvrez Next.js avec ce parcours d'exemple (App Router, composants, routage).",
+    "duration": "~2h",
+    "moduleIds": ["01-decouvrir-nextjs", "02-app-router", "03-composants"],
+    "missionIds": ["01-premier-projet"],
+    "categoryId": "",
+    "addedAt": "2025-03-01"
+  },
+  "modules": [
+    {
+      "id": "01-decouvrir-nextjs",
+      "title": "Découvrir Next.js",
+      "description": "Présentation du framework et de son écosystème.",
+      "duration": "20 min",
+      "videoEmbedUrl": "",
+      "documentEmbedUrl": "",
+      "presentationEmbedUrl": "",
+      "quizSheetId": "",
+      "missionId": null,
+      "content": "Next.js est un framework React qui permet le rendu côté serveur, le routing basé sur les fichiers et de nombreuses optimisations. Dans ce module nous verrons comment démarrer un projet."
+    },
+    {
+      "id": "02-app-router",
+      "title": "App Router",
+      "description": "Structure des dossiers et routage avec app/.",
+      "duration": "30 min",
+      "videoEmbedUrl": "",
+      "documentEmbedUrl": "",
+      "presentationEmbedUrl": "",
+      "quizSheetId": "",
+      "missionId": null,
+      "content": "Le dossier app/ introduit le nouveau routeur de Next.js avec les layouts, les pages et les composants. Chaque dossier peut contenir page.tsx, layout.tsx et loading.tsx."
+    },
+    {
+      "id": "03-composants",
+      "title": "Composants serveur et client",
+      "description": "Différence entre Server et Client Components.",
+      "duration": "25 min",
+      "videoEmbedUrl": "",
+      "documentEmbedUrl": "",
+      "presentationEmbedUrl": "",
+      "quizSheetId": "",
+      "missionId": "01-premier-projet",
+      "content": "Par défaut les composants sont des Server Components. Utilisez \"use client\" pour les composants interactifs (hooks, événements)."
+    }
+  ],
+  "missions": [
+    {
+      "id": "01-premier-projet",
+      "title": "Créer votre premier projet Next.js",
+      "context": "Vous avez vu les bases de Next.js et de l'App Router.",
+      "objective": "Initialiser un projet Next.js avec create-next-app et afficher une page personnalisée.",
+      "instructions": [
+        "Exécutez npx create-next-app@latest mon-app",
+        "Répondez aux questions (TypeScript, ESLint, Tailwind selon vos préférences)",
+        "Ouvrez app/page.tsx et modifiez le contenu",
+        "Lancez npm run dev et ouvrez http://localhost:3000"
+      ],
+      "deliverable": "Un projet Next.js qui tourne en local avec une page modifiée."
+    }
+  ]
+}

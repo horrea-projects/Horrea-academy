@@ -1,0 +1,10 @@
+{
+  "id": "03-livraison-projet",
+  "title": "Livraison et recette",
+  "description": "Recette, formation client et passage en production.",
+  "duration": "1h",
+  "videoEmbedUrl": "https://drive.google.com/file/d/7EXAMPLE_PLACEHOLDER/preview",
+  "quizSheetId": "",
+  "missionId": "01-mission-brief",
+  "content": "Phase de recette : checklist de validation, formation à l'admin Shopify, bascule du domaine et mise en production. Documentation et transfert de compétences."
+}

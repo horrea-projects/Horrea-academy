@@ -1,0 +1,8 @@
+{
+  "slug": "mon-slug-formation",
+  "title": "Titre de la formation",
+  "description": "Description détaillée de la formation : objectifs, prérequis, ce que l'apprenant saura faire à l'issue du parcours.",
+  "duration": "~4h",
+  "moduleIds": ["01-premier-module", "02-deuxieme-module"],
+  "missionIds": ["01-ma-mission"]
+}

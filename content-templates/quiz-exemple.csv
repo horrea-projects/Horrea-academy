@@ -1,0 +1,4 @@
+question,option_a,option_b,option_c,option_d,reponse,explication
+"Qu'est-ce que Next.js ?","Un framework React pour le rendu côté serveur et le routing","Une base de données","Un langage de programmation","Un éditeur de code","Un framework React pour le rendu côté serveur et le routing","Next.js est un framework basé sur React qui permet le rendu côté serveur (SSR) et le routing basé sur les fichiers."
+"Quel dossier contient les routes dans l'App Router ?","app/","pages/","src/","routes/","app/","Depuis Next.js 13, l'App Router utilise le dossier app/ pour définir les routes (chaque dossier peut contenir page.tsx, layout.tsx, etc.)."
+"Par défaut, un composant dans app/ est :","Un Server Component","Un Client Component","Un API Route","Aucune de ces réponses","Un Server Component","Par défaut, les composants dans l'App Router sont des Server Components. Ajoutez la directive ""use client"" pour un Client Component."
