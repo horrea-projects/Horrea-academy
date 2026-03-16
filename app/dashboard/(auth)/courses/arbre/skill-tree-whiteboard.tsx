@@ -67,15 +67,11 @@ export function SkillTreeWhiteboard({
 
   /** Arêtes affichées :
    *  - toujours toutes les arêtes du graphe quand aucun parcours n'est filtré
-   *  - en vue filtrée : uniquement le chemin actif + toutes les arêtes partant du centre (profil) vers les éléments de 1er niveau.
+   *  - en vue filtrée : uniquement le chemin actif (sans les autres arêtes du centre).
    */
   const displayEdges = useMemo(() => {
     if (!selectedMetierId) return edges;
-    return edges.filter((e) => {
-      const key = `${e.fromId}-${e.toId}`;
-      if (e.fromId === "center") return true;
-      return activeEdgeSet.has(key);
-    });
+    return edges.filter((e) => activeEdgeSet.has(`${e.fromId}-${e.toId}`));
   }, [edges, activeEdgeSet, selectedMetierId]);
 
   /** En vue filtrée (un parcours choisi), tout ce qu'on affiche est actif. */

@@ -30,6 +30,12 @@ const ACTIVE_COUNT = 5;
 export function AdminDashboardClient() {
   const [courses, setCourses] = useState<CourseRow[]>([]);
   const [users, setUsers] = useState<UserAggregate[]>([]);
+  const [stats, setStats] = useState<{
+    totalCourses: number;
+    categoriesCount: number;
+    totalUsers: number;
+    avgCoursesCompleted: number;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,23 +45,40 @@ export function AdminDashboardClient() {
       setLoading(true);
       setError(null);
       try {
-        const [coursesRes, usersRes] = await Promise.all([
+        const [coursesRes, usersRes, categoriesRes] = await Promise.all([
           fetch("/api/admin/courses"),
-          fetch("/api/admin/users")
+          fetch("/api/admin/users"),
+          fetch("/api/admin/categories"),
         ]);
         if (!coursesRes.ok) throw new Error("Erreur chargement formations");
         if (!usersRes.ok) throw new Error("Erreur chargement utilisateurs");
+        if (!categoriesRes.ok) throw new Error("Erreur chargement catégories");
         const coursesData = await coursesRes.json();
         const usersData = await usersRes.json();
+        const categoriesData = await categoriesRes.json();
         if (!cancelled) {
-          setCourses((coursesData.courses ?? []).slice(0, RECENT_COUNT));
-          const sorted = (usersData.users ?? []).slice().sort((a: UserAggregate, b: UserAggregate) => {
+          const allCourses = (coursesData.courses ?? []) as CourseRow[];
+          const allUsers = (usersData.users ?? []) as UserAggregate[];
+
+          setCourses(allCourses.slice(0, RECENT_COUNT));
+          const sorted = allUsers.slice().sort((a, b) => {
             const aDate = a.lastActivityAt ? new Date(a.lastActivityAt).getTime() : 0;
             const bDate = b.lastActivityAt ? new Date(b.lastActivityAt).getTime() : 0;
             if (bDate !== aDate) return bDate - aDate;
             return (b.modulesCompleted + b.coursesCompleted) - (a.modulesCompleted + a.coursesCompleted);
           });
           setUsers(sorted.slice(0, ACTIVE_COUNT));
+
+          const totalCourses = allCourses.length;
+          const categoriesCount = (categoriesData.categories ?? []).length;
+          const totalUsers = allUsers.length;
+          const totalCoursesCompleted = allUsers.reduce((sum, u) => sum + u.coursesCompleted, 0);
+          setStats({
+            totalCourses,
+            categoriesCount,
+            totalUsers,
+            avgCoursesCompleted: totalUsers ? totalCoursesCompleted / totalUsers : 0,
+          });
         }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Erreur");
@@ -85,8 +108,43 @@ export function AdminDashboardClient() {
   }
 
   return (
-    <div className="grid gap-6 md:grid-cols-2">
-      <Card>
+    <div className="space-y-6">
+      {stats && (
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Nombre de formations</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold">{stats.totalCourses}</p>
+              <p className="text-muted-foreground text-xs">
+                dans {stats.categoriesCount} catégorie{stats.categoriesCount > 1 ? "s" : ""}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Utilisateurs formés</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold">{stats.totalUsers}</p>
+              <p className="text-muted-foreground text-xs">Comptes ayant une activité de formation</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Formations complétées / utilisateur</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold">{stats.avgCoursesCompleted.toFixed(1)}</p>
+              <p className="text-muted-foreground text-xs">Moyenne de formations terminées par utilisateur</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-base font-medium flex items-center gap-2">
             <BookOpen className="size-4" />
@@ -172,6 +230,7 @@ export function AdminDashboardClient() {
           )}
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

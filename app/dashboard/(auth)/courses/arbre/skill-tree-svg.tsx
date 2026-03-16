@@ -49,9 +49,22 @@ export function SkillTreeSvg({
   activeEdgeSet,
   userImageUrl,
   userName,
-  preview = false
+  preview = false,
 }: SkillTreeSvgProps) {
   const initial = userName?.slice(0, 2).toUpperCase() ?? "?";
+  // Rayons visuels approximatifs des différents types de nœuds
+  const CENTER_RADIUS = 40; // clipPath r=36 + bordures
+  const CATEGORY_RADIUS = 24;
+  const SUBCATEGORY_RADIUS = 20;
+  const COURSE_RADIUS = 26;
+
+  const radiusForNode = (n: SkillTreeNode | undefined): number => {
+    if (!n) return 0;
+    if (n.type === "center") return CENTER_RADIUS;
+    if (n.type === "category") return n.isSub ? SUBCATEGORY_RADIUS : CATEGORY_RADIUS;
+    if (n.type === "course") return COURSE_RADIUS;
+    return 0;
+  };
 
   return (
     <svg
@@ -60,14 +73,6 @@ export function SkillTreeSvg({
       style={preview ? undefined : { minWidth: VIEWBOX_WIDTH, minHeight: VIEWBOX_HEIGHT }}
       preserveAspectRatio="xMidYMid meet">
       <defs>
-        <linearGradient id="linkGradActive" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity="0.8" />
-          <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity="0.3" />
-        </linearGradient>
-        <linearGradient id="linkGradInactive" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="hsl(var(--muted-foreground))" stopOpacity="0.25" />
-          <stop offset="100%" stopColor="hsl(var(--muted-foreground))" stopOpacity="0.1" />
-        </linearGradient>
         <clipPath id="clip-center">
           <circle r="36" cx="0" cy="0" />
         </clipPath>
@@ -75,24 +80,38 @@ export function SkillTreeSvg({
       {edges.map((e, i) => {
         const key = `${e.fromId}-${e.toId}`;
         const active = activeEdgeSet.has(key);
-        const isFromCenter = e.fromId === "center";
+        const fromNode = nodes.find((n) => n.id === e.fromId);
+        const toNode = nodes.find((n) => n.id === e.toId);
+
+        // Vecteur unitaire de from → to
+        const dx = e.to.x - e.from.x;
+        const dy = e.to.y - e.from.y;
+        const d = Math.hypot(dx, dy) || 1;
+        const ux = dx / d;
+        const uy = dy / d;
+
+        // On coupe la ligne aux bords des cercles de départ et d'arrivée
+        const rFrom = radiusForNode(fromNode);
+        const rTo = radiusForNode(toNode);
+        const x1 = e.from.x + ux * rFrom;
+        const y1 = e.from.y + uy * rFrom;
+        const x2 = e.to.x - ux * rTo;
+        const y2 = e.to.y - uy * rTo;
+
+        // Couleur unique pour toutes les arêtes (gris), avec pointillés pour tout le monde.
+        const strokeColor = "#9ca3af";
+
         return (
           <line
             key={`edge-${i}`}
-            x1={e.from.x}
-            y1={e.from.y}
-            x2={e.to.x}
-            y2={e.to.y}
-            stroke={
-              isFromCenter
-                ? "hsl(var(--foreground))"
-                : active
-                  ? "url(#linkGradActive)"
-                  : "url(#linkGradInactive)"
-            }
-            strokeWidth={isFromCenter ? 2.4 : active ? 2 : 1.5}
+            x1={x1}
+            y1={y1}
+            x2={x2}
+            y2={y2}
+            stroke={strokeColor}
+            strokeWidth={active ? 2 : 1.5}
             strokeLinecap="round"
-            strokeDasharray={isFromCenter ? undefined : active ? undefined : "6 4"}
+            strokeDasharray="6 4"
           />
         );
       })}

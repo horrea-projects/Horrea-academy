@@ -7,17 +7,43 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SkillTreePreview, type SkillTreePreviewProps } from "./skill-tree-preview";
 
-export function SkillTreeCard(props: SkillTreePreviewProps) {
-  const { assignedMetiersWithFormations } = props;
+export type SkillTreeCardProps = SkillTreePreviewProps & {
+  completionStats?: {
+    parcoursPercent: number;
+    globalPercent: number;
+  };
+};
+
+export function SkillTreeCard(props: SkillTreeCardProps) {
+  const { assignedMetiersWithFormations, completionStats } = props;
   const hasMetiers = assignedMetiersWithFormations.length > 0;
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Briefcase className="size-5" />
-          Parcours Métier
-        </CardTitle>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <Briefcase className="size-5" />
+            Parcours Métier
+          </CardTitle>
+          {completionStats && (
+            <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-muted-foreground">
+              <span>
+                Parcours :{" "}
+                <span className="font-medium text-foreground">
+                  {Math.round(completionStats.parcoursPercent)}%
+                </span>
+              </span>
+              <span className="hidden sm:inline text-border">|</span>
+              <span>
+                Catalogue :{" "}
+                <span className="font-medium text-foreground">
+                  {Math.round(completionStats.globalPercent)}%
+                </span>
+              </span>
+            </div>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {hasMetiers ? (
