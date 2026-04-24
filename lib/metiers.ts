@@ -122,13 +122,13 @@ export async function getUserMetiers(clerkId: string | null): Promise<UserMetier
     return [];
   }
 
-  const rows = (data ?? []) as Array<{
+  const rows = ((data ?? []) as unknown) as Array<{
     id: string;
     clerk_id: string;
     metier_id: string;
     assigned_at: string;
     assigned_by: string | null;
-    metiers: Metier | null;
+    metiers: Metier | Metier[] | null;
   }>;
   return rows.map((r) => ({
     id: r.id,
@@ -136,7 +136,7 @@ export async function getUserMetiers(clerkId: string | null): Promise<UserMetier
     metier_id: r.metier_id,
     assigned_at: r.assigned_at,
     assigned_by: r.assigned_by,
-    metier: r.metiers ?? undefined,
+    metier: Array.isArray(r.metiers) ? r.metiers[0] ?? undefined : r.metiers ?? undefined,
   }));
 }
 

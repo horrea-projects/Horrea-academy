@@ -77,9 +77,10 @@ export default async function ModulePage({ params }: Props) {
     ? course.moduleIds[currentIndex + 1]
     : null;
   const moduleWithQuiz = moduleData as typeof moduleData & { quizSheetName?: string; minQuizScore?: number | null };
-  const hasQuiz =
+  const hasQuiz = Boolean(
     moduleData.quizSheetId ||
-    (fromDb?.quizSpreadsheetId && moduleWithQuiz.quizSheetName);
+      (fromDb?.quizSpreadsheetId && moduleWithQuiz.quizSheetName)
+  );
   const minQuizScore = moduleWithQuiz.minQuizScore ?? null;
   const quizScore = progress.quizScores?.[moduleId] ?? null;
 

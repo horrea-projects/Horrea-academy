@@ -37,8 +37,9 @@ const STATUS_PUBLISHED = "published";
 
 /** Liste des catégories publiées (Supabase) pour le catalogue. Inclut parent_id pour filtrer racines / sous-catégories. */
 export async function getCategoriesFromDb(): Promise<CategoryListItem[]> {
+  type CategoriesQueryResult = { data: unknown; error: { code?: string; message?: string } | null };
   let query = supabaseAdmin.from("categories").select("id, slug, label, icon, parent_id").order("label", { ascending: true });
-  let result = await query.eq("status", STATUS_PUBLISHED);
+  let result: CategoriesQueryResult = await query.eq("status", STATUS_PUBLISHED);
   if (result.error?.code === "42703" || result.error?.message?.includes("parent_id")) {
     result = await supabaseAdmin.from("categories").select("id, slug, label, icon").order("label", { ascending: true });
     if (result.error) return [];
@@ -107,14 +108,31 @@ export async function getPublishedCoursesFromDb(opts?: { categorySlug?: string }
   const { data, error } = result;
 
   if (error) return [];
-  let rows = (data ?? []) as Array<{ id: string; slug: string; title: string; description: string; duration: string; added_at: string; category_id: string | null; categories?: { slug: string } | null }>;
+  let rows = ((data ?? []) as unknown) as Array<{
+    id: string;
+    slug: string;
+    title: string;
+    description: string;
+    duration: string;
+    added_at: string;
+    category_id: string | null;
+    categories?: { slug: string } | Array<{ slug: string }> | null;
+  }>;
   if (rows.length === 0) return [];
 
-  if (rows.some((r) => r.category_id && !r.categories?.slug)) {
+  const getCategorySlug = (categories: { slug: string } | Array<{ slug: string }> | null | undefined) =>
+    Array.isArray(categories) ? categories[0]?.slug : categories?.slug;
+
+  if (rows.some((r) => r.category_id && !getCategorySlug(r.categories))) {
     const categoryIds = [...new Set(rows.map((r) => r.category_id).filter(Boolean))] as string[];
     const { data: catRows } = await supabaseAdmin.from("categories").select("id, slug").in("id", categoryIds);
     const slugById = new Map((catRows ?? []).map((c: { id: string; slug: string }) => [c.id, c.slug]));
-    rows = rows.map((r) => (r.category_id && !r.categories ? { ...r, categories: { slug: slugById.get(r.category_id) ?? null } } : r));
+    rows = rows.map((r) => {
+      if (!r.category_id || r.categories) return r;
+      const categorySlug = slugById.get(r.category_id);
+      if (!categorySlug) return r;
+      return { ...r, categories: { slug: categorySlug } };
+    });
   }
 
   const ids = rows.map((c) => c.id);
@@ -137,11 +155,13 @@ export async function getPublishedCoursesFromDb(opts?: { categorySlug?: string }
   return rows.map((c) => ({
     slug: c.slug,
     title: c.title,
-    descriptionShort: c.description?.slice(0, 120) + (c.description?.length > 120 ? "…" : "") ?? "",
+    descriptionShort: c.description
+      ? c.description.slice(0, 120) + (c.description.length > 120 ? "…" : "")
+      : "",
     duration: c.duration ?? "~0h",
     moduleCount: moduleCountById[c.id] ?? 0,
     missionCount: missionCountById[c.id] ?? 0,
-    categoryId: c.categories?.slug ?? undefined,
+    categoryId: getCategorySlug(c.categories) ?? undefined,
     addedAt: c.added_at ?? undefined,
   }));
 }
@@ -213,11 +233,15 @@ async function buildCourseDetailResult(course: Record<string, unknown>): Promise
   published?: boolean;
   status?: string;
   created_by?: string | null;
+  onboardingTitle?: string | null;
+  onboardingContent?: string | null;
+  onboardingPresentationEmbedUrl?: string | null;
+  onboardingQuizSheetName?: string | null;
 } | null> {
   const courseId = course.id as string;
 
   let modulesRows: Record<string, unknown>[] | null = null;
-  let modRes = await supabaseAdmin
+  let modRes: { data: unknown; error: { code?: string; message?: string } | null } = await supabaseAdmin
     .from("course_modules")
     .select("module_slug, title, description, duration, video_embed_url, document_embed_url, presentation_embed_url, quiz_sheet_id, quiz_sheet_name, mission_id_slug, content, position, min_quiz_score")
     .eq("course_id", courseId)
@@ -230,7 +254,7 @@ async function buildCourseDetailResult(course: Record<string, unknown>): Promise
       .eq("course_id", courseId)
       .order("position", { ascending: true });
   }
-  modulesRows = modRes.data ?? null;
+  modulesRows = (modRes.data as Record<string, unknown>[] | null) ?? null;
   const quizSpreadsheetId = (course.quiz_spreadsheet_id as string | null) ?? undefined;
 
   const { data: missionsRows } = await supabaseAdmin

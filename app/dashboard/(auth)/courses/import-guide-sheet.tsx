@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import type JSZip from "jszip";
 import {
   Sheet,
   SheetContent,
@@ -87,7 +88,7 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-async function findFormationJsonInZip(zip: { file: (path: string) => { async: (type: string) => Promise<string> } | null; files: Record<string, unknown> }): Promise<string | null> {
+async function findFormationJsonInZip(zip: JSZip): Promise<string | null> {
   const names = ["formation-complete.template.json", "formation-complete.json", "formation-complete.example.json"];
   for (const name of names) {
     const entry = zip.file(name);

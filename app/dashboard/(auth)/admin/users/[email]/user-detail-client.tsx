@@ -24,7 +24,7 @@ import { Loader2, Network, Pencil, Trash2, Briefcase } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
-import { SkillTreePreview } from "@/app/dashboard/(auth)/pages/profile/components/skill-tree-preview";
+import { SkillTreePreview, type SkillTreePreviewProps } from "@/app/dashboard/(auth)/pages/profile/components/skill-tree-preview";
 
 type CourseSummary = {
   courseSlug: string;
@@ -84,14 +84,7 @@ export function UserDetailClient({ email }: Props) {
   const [metiersLoading, setMetiersLoading] = useState(false);
   const [metierIds, setMetierIds] = useState<string[]>([]);
   const [metiersSaving, setMetiersSaving] = useState(false);
-  const [skillTreeData, setSkillTreeData] = useState<{
-    categories: { id: string; slug: string; label: string; icon: string; parent_id?: string | null }[];
-    courses: { slug: string; title: string; categoryId?: string; moduleCount?: number; missionCount?: number; addedAt?: string }[];
-    progressByCourse: Record<string, { completedModuleIds: string[]; completedMissionIds: string[] }>;
-    assignedMetiersWithFormations: { id: string; label: string; slug: string; course_slugs: string[] }[];
-    userImageUrl: string | null;
-    userName: string | null;
-  } | null>(null);
+  const [skillTreeData, setSkillTreeData] = useState<SkillTreePreviewProps | null>(null);
   const [skillTreeLoading, setSkillTreeLoading] = useState(false);
   const router = useRouter();
 

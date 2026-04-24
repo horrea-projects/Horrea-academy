@@ -59,6 +59,7 @@ const emptyModule = (): ModuleRow => ({
   quiz_sheet_name: "",
   mission_id_slug: "",
   content: "",
+  min_quiz_score: "",
 });
 
 const emptyMission = (): MissionRow => ({

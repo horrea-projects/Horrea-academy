@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { JSZipObject } from "jszip";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Upload, Loader2 } from "lucide-react";
@@ -22,7 +23,7 @@ export function ProposeImportClient() {
         const JSZip = (await import("jszip")).default;
         const zip = await JSZip.loadAsync(file);
         const names = ["formation-complete.template.json", "formation-complete.json"];
-        let entry: { async: (t: string) => Promise<string> } | null = null;
+        let entry: JSZipObject | null = null;
         for (const name of names) {
           const path = Object.keys(zip.files).find((p) => p.endsWith(name) || p.includes("formation-complete"));
           if (path) {

@@ -17,9 +17,10 @@ const getAuth = () => {
 };
 
 type QuizRow = { reponse: string; explication: string };
+type GoogleAuthClient = NonNullable<ReturnType<typeof getAuth>>;
 
 async function fetchQuizWithAnswers(
-  auth: InstanceType<ReturnType<typeof getAuth>>,
+  auth: GoogleAuthClient,
   spreadsheetId: string,
   sheetName: string
 ): Promise<QuizRow[]> {
