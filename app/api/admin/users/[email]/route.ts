@@ -173,6 +173,8 @@ function buildUserDetail(
     email,
     name: null,
     is_admin: false,
+    clerk_id: null,
+    userMetiers: [],
     modulesCompleted: completedModuleKeys.size,
     coursesCompleted,
     lastActivityAt,
