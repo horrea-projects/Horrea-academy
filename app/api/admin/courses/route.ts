@@ -16,7 +16,7 @@ export async function GET() {
     return new NextResponse("Forbidden", { status: 403 });
   }
 
-  let coursesResult = await supabaseAdmin
+  let coursesResult: { data: unknown; error: { code?: string; message?: string } | null } = await supabaseAdmin
     .from("courses")
     .select("id, slug, title, description, duration, published, status, added_at, category_id, created_by, categories(slug, label, icon)")
     .order("added_at", { ascending: false });
@@ -33,7 +33,7 @@ export async function GET() {
     return NextResponse.json({ error: "Erreur lecture formations" }, { status: 500 });
   }
 
-  const courses = coursesData ?? [];
+  const courses = (coursesData ?? []) as Array<Record<string, unknown>>;
   const courseIds = courses.map((c: { id: string }) => c.id);
   const clerkIds = [...new Set(courses.map((c: { created_by?: string | null }) => c.created_by).filter(Boolean))] as string[];
 
@@ -185,7 +185,7 @@ export async function POST(req: NextRequest) {
       final_quiz_sheet_id: final_quiz_sheet_id?.trim() || null,
       quiz_spreadsheet_id: quiz_spreadsheet_id?.trim() || null,
       final_quiz_sheet_name: final_quiz_sheet_name?.trim() || null,
-      final_quiz_min_score: final_quiz_min_score != null && final_quiz_min_score !== "" ? Number(final_quiz_min_score) : null,
+      final_quiz_min_score: final_quiz_min_score != null && !Number.isNaN(final_quiz_min_score) ? final_quiz_min_score : null,
     } as Record<string, unknown>;
     let insertResult = await supabaseAdmin.from("courses").insert(insertPayload).select("id, slug").single();
     // Si colonne absente (PGRST204 / schema cache), réessayer sans final_quiz_min_score
@@ -222,7 +222,7 @@ export async function POST(req: NextRequest) {
         mission_id_slug: m.mission_id_slug ?? null,
         content: m.content ?? null,
         position: m.position,
-        min_quiz_score: m.min_quiz_score != null && m.min_quiz_score !== "" ? Number(m.min_quiz_score) : null,
+        min_quiz_score: m.min_quiz_score != null && !Number.isNaN(m.min_quiz_score) ? m.min_quiz_score : null,
       }));
       const baseRows = modules.map((m) => ({
         course_id: course.id,
@@ -242,7 +242,7 @@ export async function POST(req: NextRequest) {
       const modSchemaErr = modResult.error?.code === "42703" || modResult.error?.code === "PGRST204" || modResult.error?.message?.includes("schema cache") || modResult.error?.message?.includes("min_quiz_score") || modResult.error?.message?.includes("quiz_sheet_name");
       if (modResult.error && modSchemaErr) {
         modResult = await supabaseAdmin.from("course_modules").insert(baseRows);
-        if (!modResult.error && modules.some((m) => m.quiz_sheet_name?.trim() || (m.min_quiz_score != null && m.min_quiz_score !== ""))) {
+        if (!modResult.error && modules.some((m) => m.quiz_sheet_name?.trim() || m.min_quiz_score != null)) {
           modulesQuizNotSaved = true;
         }
       }
