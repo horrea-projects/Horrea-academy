@@ -116,6 +116,7 @@ function aggregateByUser(rows: ProgressRow[], courseTotals: Map<string, CourseTo
     }
     aggregates.push({
       email,
+      clerkId: null,
       modulesCompleted: state.modulesCompletedSet.size,
       coursesCompleted,
       coursesCreated: 0,
