@@ -205,7 +205,7 @@ export async function PATCH(
           mission_id_slug: m.mission_id_slug ?? null,
           content: m.content ?? null,
           position: m.position,
-          min_quiz_score: m.min_quiz_score != null && m.min_quiz_score !== "" ? Number(m.min_quiz_score) : null,
+          min_quiz_score: m.min_quiz_score != null && !Number.isNaN(m.min_quiz_score) ? m.min_quiz_score : null,
         }));
         // Colonnes du schéma de base uniquement (sans quiz_sheet_name, min_quiz_score ajoutés par migrations)
         const baseRows = body.modules.map((m) => ({
