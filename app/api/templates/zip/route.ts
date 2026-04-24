@@ -32,8 +32,8 @@ export async function GET() {
     }
   }
 
-  const blob = await zip.generateAsync({ type: "nodebuffer" });
-  return new NextResponse(blob, {
+  const zipBytes = await zip.generateAsync({ type: "uint8array" });
+  return new NextResponse(zipBytes, {
     headers: {
       "Content-Type": "application/zip",
       "Content-Disposition": 'attachment; filename="horrea-academy-templates.zip"',
