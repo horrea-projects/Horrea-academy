@@ -108,7 +108,7 @@ export async function GET(
 
   const categorySlug = Array.isArray(c.categories) ? (c.categories[0]?.slug ?? null) : (c.categories?.slug ?? null);
 
-  let modulesRows = await supabaseAdmin
+  let modulesRows: { data: unknown; error: { code?: string; message?: string } | null } = await supabaseAdmin
     .from("course_modules")
     .select("module_slug, title, description, duration, video_embed_url, document_embed_url, presentation_embed_url, quiz_sheet_id, quiz_sheet_name, mission_id_slug, content, position, min_quiz_score")
     .eq("course_id", id)
