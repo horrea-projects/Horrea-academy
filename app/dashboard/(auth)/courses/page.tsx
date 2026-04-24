@@ -4,6 +4,7 @@ import type { Category } from "@/lib/content";
 import { getCoursesList, getCategories } from "@/lib/content";
 import { getPublishedCoursesFromDb, getCategoriesFromDb } from "@/lib/courses-catalogue";
 import { getProgressForAllCourses } from "@/lib/progress";
+import { getMetiersWithFormations, getUserMetiers } from "@/lib/metiers";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -20,13 +21,15 @@ export const metadata = {
 };
 
 export default async function CoursesCataloguePage() {
-  const [fileCourses, dbCourses, fileCategories, dbCategories, user] = await Promise.all([
+  const [fileCourses, dbCourses, fileCategories, dbCategories, user, metiersWithFormations] = await Promise.all([
     Promise.resolve(getCoursesList()),
     getPublishedCoursesFromDb(),
     Promise.resolve(getCategories()),
     getCategoriesFromDb(),
     currentUser(),
+    getMetiersWithFormations(),
   ]);
+  const userMetiers = await getUserMetiers(user?.id ?? null);
   const bySlug = new Map(fileCourses.map((c) => [c.slug, c]));
   for (const c of dbCourses) bySlug.set(c.slug, c);
   const courses = [...bySlug.values()].sort((a, b) => {
@@ -39,14 +42,22 @@ export default async function CoursesCataloguePage() {
   for (const c of dbRootCategories) categoryBySlug.set(c.slug, { id: c.id, slug: c.slug, label: c.label, icon: c.icon });
   const categories = [...categoryBySlug.values()].sort((a, b) => a.label.localeCompare(b.label, "fr"));
 
-  /** Toutes les catégories avec parent_id pour la popover "Toutes" (filtre par catégorie). */
-  const allCategoriesForTree = [
-    ...fileCategories.map((c) => ({ ...c, parent_id: null as string | null })),
-    ...dbCategories.map((c) => ({ id: c.id, slug: c.slug, label: c.label, icon: c.icon, parent_id: c.parent_id ?? null })),
-  ];
+  /** Toutes les catégories avec parent_id pour la popover "Toutes" (filtre par catégorie), sans doublons. */
+  const bySlugForTree = new Map<
+    string,
+    { id: string; slug: string; label: string; icon: string; parent_id: string | null }
+  >();
+  for (const c of fileCategories) {
+    bySlugForTree.set(c.slug, { ...c, parent_id: null as string | null });
+  }
+  for (const c of dbCategories) {
+    bySlugForTree.set(c.slug, { id: c.id, slug: c.slug, label: c.label, icon: c.icon, parent_id: c.parent_id ?? null });
+  }
+  const allCategoriesForTree = [...bySlugForTree.values()];
 
   const email = user?.emailAddresses?.[0]?.emailAddress;
   const progressByCourse = email ? await getProgressForAllCourses(email) : {};
+  const assignedMetierIds = (userMetiers ?? []).map((m) => m.metier_id);
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -70,6 +81,13 @@ export default async function CoursesCataloguePage() {
         allCategoriesForTree={allCategoriesForTree}
         categorySlug={null}
         progressByCourse={progressByCourse}
+        metiersWithFormations={metiersWithFormations.map((m) => ({
+          id: m.id,
+          slug: m.slug,
+          label: m.label,
+          course_slugs: m.course_slugs,
+        }))}
+        assignedMetierIds={assignedMetierIds}
       />
     </div>
   );

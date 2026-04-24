@@ -43,44 +43,105 @@ export function getQuizAuthWithWrite() {
   }
 }
 
-export type QuizQuestion = { id: string; question: string; options: string[] };
+export type QuizSection = {
+  id: string;
+  title: string;
+  description?: string;
+};
+
+export type QuizQuestion = {
+  id: string;
+  question: string;
+  options: string[];
+  sectionId?: string;
+};
+
+export type QuizQuestionsPayload = {
+  sections: QuizSection[];
+  questions: QuizQuestion[];
+};
+
+function headerIndex(headers: string[], candidates: string[]): number {
+  return headers.findIndex((h) => candidates.some((c) => h === c || h.includes(c)));
+}
+
+function optionIndexes(headers: string[]): number[] {
+  return headers
+    .map((h, idx) => ({ h, idx }))
+    .filter(({ h }) => h.startsWith("option") || h.includes("option_"))
+    .map(({ idx }) => idx)
+    .sort((a, b) => a - b);
+}
 
 export async function fetchQuizQuestions(
   spreadsheetId: string,
   sheetName: string
-): Promise<QuizQuestion[]> {
+): Promise<QuizQuestionsPayload> {
   const auth = getQuizAuth();
-  if (!auth) return [];
+  if (!auth) return { sections: [], questions: [] };
 
   const range = /^[A-Za-z0-9_]+$/.test(sheetName)
-    ? `${sheetName}!A:G`
-    : `'${sheetName.replace(/'/g, "''")}'!A:G`;
+    ? `${sheetName}!A:J`
+    : `'${sheetName.replace(/'/g, "''")}'!A:J`;
   const sheets = google.sheets({ version: "v4", auth });
   const res = await sheets.spreadsheets.values.get({ spreadsheetId, range });
   const rows = res.data.values ?? [];
-  if (rows.length < 2) return [];
+  if (rows.length < 2) return { sections: [], questions: [] };
 
   const headers = (rows[0] as string[]).map((h) => (h ?? "").toLowerCase());
-  const questionIndex = headers.findIndex((h) => h.includes("question") || h === "question");
-  const optionsStart = headers.findIndex((h) => h.includes("option") || h === "option_a");
+  const typeIndex = headerIndex(headers, ["type"]);
+  const titleIndex = headerIndex(headers, ["title", "titre"]);
+  const descriptionIndex = headerIndex(headers, ["description", "desc"]);
+  const questionIndex = headerIndex(headers, ["question"]);
+  const optionCols = optionIndexes(headers);
+
+  const sections: QuizSection[] = [];
   const questions: QuizQuestion[] = [];
+  let currentSectionId: string | undefined;
+  let questionCounter = 0;
+  let sectionCounter = 0;
+
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i] as string[];
+    const type = typeIndex >= 0 ? String(row[typeIndex] ?? "").trim().toLowerCase() : "";
+    const title = titleIndex >= 0 ? String(row[titleIndex] ?? "").trim() : "";
+    const description = descriptionIndex >= 0 ? String(row[descriptionIndex] ?? "").trim() : "";
     const questionText = questionIndex >= 0 ? (row[questionIndex] ?? "") : row[0] ?? "";
-    if (!questionText.trim()) continue;
-    const options: string[] = [];
-    if (optionsStart >= 0) {
-      for (let j = optionsStart; j < row.length && j < optionsStart + 4; j++) {
-        if (row[j]) options.push(String(row[j]).trim());
-      }
+
+    // Ligne section (nouveau format) :
+    // - type=section, OU (fallback doux) title présent et pas de question.
+    const isSectionRow = type === "section" || (!!title && !String(questionText).trim() && type !== "question");
+    if (isSectionRow) {
+      if (!title) continue;
+      sectionCounter += 1;
+      const sectionId = `s-${sectionCounter}`;
+      sections.push({
+        id: sectionId,
+        title,
+        ...(description ? { description } : {}),
+      });
+      currentSectionId = sectionId;
+      continue;
     }
+
+    // Lignes questions : type=question ou legacy (type vide)
+    if (type && type !== "question") continue;
+    if (!String(questionText).trim()) continue;
+
+    const options: string[] = [];
+    for (const colIdx of optionCols) {
+      const raw = row[colIdx];
+      if (raw != null && String(raw).trim()) options.push(String(raw).trim());
+    }
+    questionCounter += 1;
     questions.push({
-      id: `q-${i}`,
-      question: questionText.trim(),
+      id: `q-${questionCounter}`,
+      question: String(questionText).trim(),
       options: options.length ? options : ["Oui", "Non"],
+      ...(currentSectionId ? { sectionId: currentSectionId } : {}),
     });
   }
-  return questions;
+  return { sections, questions };
 }
 
 type QuizRow = { reponse: string; explication: string };
@@ -93,22 +154,25 @@ export async function fetchQuizWithAnswers(
   if (!auth) return [];
 
   const range = /^[A-Za-z0-9_]+$/.test(sheetName)
-    ? `${sheetName}!A:G`
-    : `'${sheetName.replace(/'/g, "''")}'!A:G`;
+    ? `${sheetName}!A:J`
+    : `'${sheetName.replace(/'/g, "''")}'!A:J`;
   const sheets = google.sheets({ version: "v4", auth });
   const res = await sheets.spreadsheets.values.get({ spreadsheetId, range });
   const rows = res.data.values ?? [];
   if (rows.length < 2) return [];
 
   const headers = (rows[0] as string[]).map((h) => (h ?? "").toLowerCase());
-  const questionIndex = headers.findIndex((h) => h.includes("question") || h === "question");
-  const optionsStart = headers.findIndex((h) => h.includes("option") || h === "option_a");
-  const reponseIndex = headers.findIndex((h) => h === "reponse" || h.includes("reponse"));
-  const explicationIndex = headers.findIndex((h) => h === "explication" || h.includes("explication"));
+  const typeIndex = headerIndex(headers, ["type"]);
+  const questionIndex = headerIndex(headers, ["question"]);
+  const reponseIndex = headerIndex(headers, ["reponse"]);
+  const explicationIndex = headerIndex(headers, ["explication"]);
 
   const out: QuizRow[] = [];
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i] as string[];
+    const type = typeIndex >= 0 ? String(row[typeIndex] ?? "").trim().toLowerCase() : "";
+    if (type === "section") continue;
+    if (type && type !== "question") continue;
     const questionText = questionIndex >= 0 ? (row[questionIndex] ?? "") : row[0] ?? "";
     if (!questionText.trim()) continue;
     const reponse = reponseIndex >= 0 ? String(row[reponseIndex] ?? "").trim() : "";

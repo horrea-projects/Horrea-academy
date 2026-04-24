@@ -5,6 +5,7 @@ import { getCoursesList, getCategoryBySlug, getCategories } from "@/lib/content"
 import type { Category } from "@/lib/content";
 import { getPublishedCoursesFromDb, getCategoryBySlugFromDb, getCategoriesFromDb } from "@/lib/courses-catalogue";
 import { getProgressForAllCourses } from "@/lib/progress";
+import { getMetiersWithFormations, getUserMetiers } from "@/lib/metiers";
 import type { CategoryPageContext } from "../../catalogue-client";
 import {
   Breadcrumb,
@@ -55,11 +56,13 @@ export default async function CourseCategoryPage({ params }: Props) {
     isPreview: isPreview ?? false,
   };
 
-  const [fileCategories, dbCategories, fileCourses, dbCourses] = await Promise.all([
+  const [fileCategories, dbCategories, fileCourses, dbCourses, metiersWithFormations, userMetiers] = await Promise.all([
     Promise.resolve(getCategories()),
     getCategoriesFromDb(),
     Promise.resolve(getCoursesList({ categoryId: categoryFromFile?.id })),
     getPublishedCoursesFromDb({ categorySlug }),
+    getMetiersWithFormations(),
+    getUserMetiers(user?.id ?? null),
   ]);
   const categoryBySlug = new Map<string, Category>(fileCategories.map((c) => [c.slug, c]));
   for (const c of dbCategories) categoryBySlug.set(c.slug, { id: c.id, slug: c.slug, label: c.label, icon: c.icon });
@@ -97,6 +100,7 @@ export default async function CourseCategoryPage({ params }: Props) {
 
   const email = user?.emailAddresses?.[0]?.emailAddress;
   const progressByCourse = email ? await getProgressForAllCourses(email) : {};
+  const assignedMetierIds = (userMetiers ?? []).map((m) => m.metier_id);
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -137,6 +141,13 @@ export default async function CourseCategoryPage({ params }: Props) {
         categoryPage={categoryPage}
         progressByCourse={progressByCourse}
         subcategories={subcategories}
+        metiersWithFormations={metiersWithFormations.map((m) => ({
+          id: m.id,
+          slug: m.slug,
+          label: m.label,
+          course_slugs: m.course_slugs,
+        }))}
+        assignedMetierIds={assignedMetierIds}
       />
     </div>
   );

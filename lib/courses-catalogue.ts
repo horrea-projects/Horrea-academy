@@ -172,9 +172,16 @@ export async function getCourseBySlugFromDb(
     .select(COURSE_SELECT_COLS)
     .eq("slug", slug);
   if (!opts?.includeUnpublished) {
+    // Priorité au nouveau schéma (status='published'), puis fallback legacy (published=true)
+    // pour éviter les 404 sur des formations publiées avant la migration de status.
     let result = await query.eq("status", STATUS_PUBLISHED).maybeSingle();
     if (result.error?.code === "42703") {
       result = await query.eq("published", true).maybeSingle();
+    } else if (!result.error && !result.data) {
+      const legacy = await query.eq("published", true).maybeSingle();
+      if (!legacy.error && legacy.data) {
+        result = legacy;
+      }
     }
     if (result.error || !result.data) return null;
     const course = result.data as Record<string, unknown>;

@@ -43,7 +43,7 @@ Le chargement est fait côté serveur dans `lib/content.ts` (pas de base de donn
 | Support | Champ dans le module | Comment l’obtenir |
 |--------|----------------------|--------------------|
 | **Vidéo** | `videoEmbedUrl` | Google Drive : partager la vidéo « Toute personne avec le lien », puis utiliser l’URL d’embed au format `https://drive.google.com/file/d/{ID}/preview`. |
-| **Quiz** | `quizSheetId` | Google Sheet : créer une feuille avec en-têtes (ex. `question`, `option_a`, `option_b`…), partager en lecture avec le compte de service, mettre l’ID du spreadsheet dans `quizSheetId`. |
+| **Quiz** | `quizSheetId` | Google Sheet : créer une feuille avec en-têtes (ex. `question`, `option_a`, `option_b`…), partager en lecture avec le compte de service, mettre l’ID du spreadsheet dans `quizSheetId`. Vous pouvez aussi ajouter des sections de contexte avec colonnes optionnelles `type`, `title`/`titre`, `description` (`type=section`), puis des lignes `type=question`. |
 | **Texte** | `content` | Texte libre affiché dans la page du module. |
 | **Document** | `documentEmbedUrl` | Google Doc : Fichier → Publier sur le Web → Intégrer, copier l’URL de l’iframe (format `https://docs.google.com/document/d/{ID}/pub?embedded=true`). |
 | **Présentation** | `presentationEmbedUrl` | Google Slides : Fichier → Publier sur le Web → Intégrer, copier l’URL de l’iframe. |

@@ -59,6 +59,28 @@ export function MarkModuleComplete({ courseSlug, moduleId, nextModuleId, isCompl
     }
   };
 
+  const handleRedo = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/progress/reset-module", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ courseSlug, moduleId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error ?? "Erreur lors de la remise à zéro du module.");
+        return;
+      }
+      toast.success("Le module a été remis à zéro. Vous pouvez le refaire.");
+      router.refresh();
+    } catch {
+      toast.error("Erreur réseau");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (isCompleted) {
     return (
       <Card className="border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30">
@@ -72,6 +94,9 @@ export function MarkModuleComplete({ courseSlug, moduleId, nextModuleId, isCompl
           <span className="text-muted-foreground text-sm">
             Vous avez déjà validé ce module.
           </span>
+          <Button size="sm" variant="outline" onClick={handleRedo} disabled={loading}>
+            {loading ? "Remise à zéro…" : "Refaire le module"}
+          </Button>
           {nextModuleId ? (
             <Button asChild size="sm">
               <Link href={`/dashboard/courses/${courseSlug}/modules/${nextModuleId}`}>
@@ -108,7 +133,7 @@ export function MarkModuleComplete({ courseSlug, moduleId, nextModuleId, isCompl
             ? "Une fois le contenu et le quiz (s'il y en a un) terminés, validez ce module pour enregistrer votre progression et passer au suivant."
             : "Terminez le quiz avec le score requis pour débloquer la validation."}
         </p>
-        <div className="flex justify-end">
+        <div className="flex items-center justify-end gap-2">
           <Button onClick={handleValidate} disabled={loading || !canValidate}>
             {loading ? "Enregistrement…" : "Valider le module"}
           </Button>

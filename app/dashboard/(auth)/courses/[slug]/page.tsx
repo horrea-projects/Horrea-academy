@@ -42,6 +42,11 @@ export default async function CourseDetailPage({ params }: Props) {
   if (!fromDb && isAdmin) {
     fromDb = await getCourseBySlugFromDb(slug, { includeUnpublished: true });
   }
+  // Pour les comptes connectés non-admin, éviter les 404 sur formations non publiées
+  // (ex: contenus en draft assignés en interne).
+  if (!fromDb && user && !courseFromFile) {
+    fromDb = await getCourseBySlugFromDb(slug, { includeUnpublished: true });
+  }
 
   const course = courseFromFile ?? fromDb?.course;
   if (!course) notFound();

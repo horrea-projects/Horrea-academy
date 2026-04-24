@@ -17,17 +17,24 @@ Chaque feuille doit avoir **la même structure** :
 
 - **Ligne 1** : en-têtes (obligatoire).
 - **Colonnes** (ordre recommandé) :
+  - `type` (optionnel) : `section` ou `question`. Si vide, la ligne est traitée comme une question (format legacy).
+  - `title` / `titre` (optionnel) : titre d’une section.
+  - `description` (optionnel) : texte de contexte de section.
   - Une colonne dont l’en-tête contient `question` (ou `Question`) : texte de la question.
   - Des colonnes pour les options : en-têtes contenant `option` ou `option_a`, `option_b`, `option_c`, `option_d`, etc.
+  - `reponse` et `explication` (optionnels mais recommandés pour la correction).
 
 Les en-têtes reconnus (insensibles à la casse) :
 
+- Pour le type de ligne : `type`.
+- Pour les sections : `title` ou `titre`, `description`.
 - Pour la question : `question` ou contenant "question".
 - Pour les options : `option_a`, `option_b`, … ou tout en-tête contenant "option".
+- Pour la correction : `reponse`, `explication`.
 
 Vous pouvez avoir jusqu’à 5 options par question. S’il n’y a pas d’options détectées, "Oui" et "Non" sont proposées par défaut.
 
-## Exemple de contenu (à coller dans une feuille)
+## Exemple 1 — format legacy (toujours valide)
 
 Ligne 1 (en-têtes) :
 
@@ -41,6 +48,29 @@ Ligne 2 et suivantes (une ligne par question) :
 Quelle est la capitale de la France ?,Paris,Lyon,Marseille
 Quel framework utilise cette formation ?,Next.js,React,Vue
 ```
+
+## Exemple 2 — format avec sections contextuelles
+
+Ligne 1 (en-têtes) :
+
+```
+type,title,description,question,option_a,option_b,option_c,reponse,explication
+```
+
+Lignes suivantes :
+
+```
+section,Onboarding cas Leo,Leo vient de créer une boutique e-commerce et souhaite l'aide d'Horrea.,,,,,,
+question,,,Quelle est la première étape ?,Définir l'offre,Lancer des ads,Refaire le logo,Définir l'offre,On démarre par les fondations.
+question,,,Quel KPI suivre en priorité ?,Taux de conversion,Followers,Temps de session,Taux de conversion,Le KPI doit être relié à l'objectif business.
+section,Contexte acquisition,Leo veut tester ses premiers canaux d'acquisition.,,,,,,
+question,,,Quel canal tester en premier ?,SEO + contenu,Affichage massif,Réseau social aléatoire,SEO + contenu,Canal durable et mesurable.
+```
+
+Notes :
+- Une ligne `type=section` applique le contexte aux questions suivantes, jusqu’à la prochaine section.
+- Une ligne `type=question` (ou `type` vide) est une question classique.
+- Les sections sont **optionnelles** : sans section, le quiz fonctionne comme avant.
 
 ## Fichier CSV d’exemple
 

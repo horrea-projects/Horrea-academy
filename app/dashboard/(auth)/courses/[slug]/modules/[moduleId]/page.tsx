@@ -48,6 +48,9 @@ export default async function ModulePage({ params }: Props) {
   const courseFromFile = getCourseBySlug(slug);
   let fromDb = courseFromFile ? null : await getCourseBySlugFromDb(slug);
   if (!fromDb && isAdmin) fromDb = await getCourseBySlugFromDb(slug, { includeUnpublished: true });
+  if (!fromDb && user && !courseFromFile) {
+    fromDb = await getCourseBySlugFromDb(slug, { includeUnpublished: true });
+  }
   const course = courseFromFile ?? fromDb?.course;
   const moduleData = courseFromFile
     ? getModule(slug, moduleId)

@@ -100,8 +100,6 @@ export async function PATCH(
     console.error(result.error);
     return NextResponse.json({ error: result.error.message }, { status: 500 });
   }
-
-  return NextResponse.json({ category: result.data });
 }
 
 export async function DELETE(

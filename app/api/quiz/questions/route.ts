@@ -34,8 +34,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    const questions = await fetchQuizQuestions(spreadsheetId, sheetName);
-    return NextResponse.json({ questions });
+    const { sections, questions } = await fetchQuizQuestions(spreadsheetId, sheetName);
+    return NextResponse.json({ sections, questions });
   } catch (err) {
     console.error(err);
     return NextResponse.json(

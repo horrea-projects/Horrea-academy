@@ -136,6 +136,7 @@ type CourseProgress = {
 };
 
 type CategoryWithParent = Category & { parent_id?: string | null };
+type MetierWithFormationsLite = { id: string; slug: string; label: string; course_slugs: string[] };
 
 type CatalogueClientProps = {
   courses: CourseListItem[];
@@ -149,6 +150,10 @@ type CatalogueClientProps = {
   progressByCourse?: Record<string, CourseProgress>;
   /** Sous-catégories de la catégorie courante (affichées en cartes sur la page catégorie). */
   subcategories?: Category[];
+  /** Parcours métiers disponibles + leurs formations (pour assignation/filtre). */
+  metiersWithFormations?: MetierWithFormationsLite[];
+  /** Parcours métiers assignés à l'utilisateur connecté. */
+  assignedMetierIds?: string[];
 };
 
 export function CatalogueClient({
@@ -159,11 +164,14 @@ export function CatalogueClient({
   categoryPage,
   progressByCourse = {},
   subcategories = [],
+  metiersWithFormations = [],
+  assignedMetierIds = [],
 }: CatalogueClientProps) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("date");
   const [categoryFilterSlug, setCategoryFilterSlug] = useState<string | null>(categorySlug ?? null);
+  const [metierFilterId, setMetierFilterId] = useState<string>("all");
 
   const hasCategoryOnboarding =
     !!categoryPage &&
@@ -180,6 +188,14 @@ export function CatalogueClient({
   useEffect(() => {
     setCategoryFilterSlug(categorySlug ?? null);
   }, [categorySlug]);
+
+  useEffect(() => {
+    setMetierFilterId((prev) => {
+      if (prev === "all") return "all";
+      if (metiersWithFormations.some((m) => m.id === prev)) return prev;
+      return "all";
+    });
+  }, [metiersWithFormations]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !onboardingStorageKey) return;
@@ -224,6 +240,56 @@ export function CatalogueClient({
     return m;
   }, [categories]);
 
+  const allowedCourseSlugs = useMemo(() => {
+    if (metierFilterId === "all") return null;
+    const metier = metiersWithFormations.find((m) => m.id === metierFilterId);
+    return new Set(metier?.course_slugs ?? []);
+  }, [metierFilterId, metiersWithFormations]);
+
+  const metierScopedCourses = useMemo(() => {
+    if (!allowedCourseSlugs) return initialCourses;
+    return initialCourses.filter((c) => allowedCourseSlugs.has(c.slug));
+  }, [initialCourses, allowedCourseSlugs]);
+
+  const visibleCategoryKeys = useMemo(() => {
+    const keys = new Set<string>();
+    metierScopedCourses.forEach((c) => {
+      if (c.categoryId) keys.add(c.categoryId);
+    });
+    return keys;
+  }, [metierScopedCourses]);
+
+  const visibleRootCategories = useMemo(
+    () => categories.filter((cat) => visibleCategoryKeys.has(cat.id) || visibleCategoryKeys.has(cat.slug)),
+    [categories, visibleCategoryKeys]
+  );
+
+  const visibleSubcategories = useMemo(
+    () => subcategories.filter((cat) => visibleCategoryKeys.has(cat.id) || visibleCategoryKeys.has(cat.slug)),
+    [subcategories, visibleCategoryKeys]
+  );
+
+  const visibleAllCategoriesForTree = useMemo(() => {
+    if (!allCategoriesForTree.length) return [];
+    if (!allowedCourseSlugs) return allCategoriesForTree;
+
+    const byId = new Map(allCategoriesForTree.map((c) => [c.id, c]));
+    const keep = new Set<string>();
+
+    allCategoriesForTree.forEach((cat) => {
+      const matches = visibleCategoryKeys.has(cat.id) || visibleCategoryKeys.has(cat.slug);
+      if (!matches) return;
+      keep.add(cat.id);
+      let parentId = cat.parent_id ?? null;
+      while (parentId) {
+        keep.add(parentId);
+        parentId = byId.get(parentId)?.parent_id ?? null;
+      }
+    });
+
+    return allCategoriesForTree.filter((cat) => keep.has(cat.id));
+  }, [allCategoriesForTree, allowedCourseSlugs, visibleCategoryKeys]);
+
   const handleCategoryFilterChange = (value: string) => {
     const slug = value === "all" ? null : value;
     setCategoryFilterSlug(slug);
@@ -232,7 +298,7 @@ export function CatalogueClient({
   };
 
   const filteredCourses = useMemo(() => {
-    let list = initialCourses;
+    let list = metierScopedCourses;
     const q = search.trim().toLowerCase();
     if (q) {
       list = list.filter(
@@ -260,7 +326,7 @@ export function CatalogueClient({
       });
     }
     return sorted;
-  }, [initialCourses, search, sortBy, categoryFilterSlug, categoryMap]);
+  }, [metierScopedCourses, search, sortBy, categoryFilterSlug, categoryMap]);
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -420,11 +486,11 @@ export function CatalogueClient({
                   </div>
                 </div>
               )}
-              {subcategories.length > 0 && (
+              {visibleSubcategories.length > 0 && (
                 <div className="space-y-3">
                   <h2 className="text-lg font-semibold">Sous-catégories</h2>
                   <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-                    {subcategories.map((cat) => (
+                    {visibleSubcategories.map((cat) => (
                       <Link key={cat.id} href={`/dashboard/courses/category/${cat.slug}`}>
                         <Card className="h-full transition-colors hover:border-primary/50">
                           <CardContent className="flex flex-col items-center justify-center gap-2 py-6">
@@ -460,15 +526,43 @@ export function CatalogueClient({
         </div>
       )}
 
-      {!categoryPage && categories.length > 0 && (
+      {metiersWithFormations.length > 0 && (
+        <section className="space-y-2">
+          <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Parcours métiers</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant={metierFilterId === "all" ? "default" : "outline"}
+              className="cursor-pointer transition-colors hover:opacity-90"
+              onClick={() => setMetierFilterId("all")}
+            >
+              Tous
+            </Badge>
+            {metiersWithFormations.map((m) => (
+              <Badge
+                key={m.id}
+                variant={metierFilterId === m.id ? "default" : "outline"}
+                className="cursor-pointer transition-colors hover:opacity-90"
+                onClick={() => setMetierFilterId(m.id)}
+              >
+                {assignedMetierIds.includes(m.id) && (
+                  <span className="mr-1 inline-block size-1.5 rounded-full bg-current" aria-hidden />
+                )}
+                {m.label}
+              </Badge>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {!categoryPage && visibleRootCategories.length > 0 && (
         <section>
           <h2 className="text-muted-foreground mb-3 text-sm font-medium uppercase tracking-wide">
             Catégories
           </h2>
           <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-            {allCategoriesForTree.length > 0 ? (
+            {visibleAllCategoriesForTree.length > 0 ? (
               <CategoriesPopover
-                allCategoriesForTree={allCategoriesForTree}
+                allCategoriesForTree={visibleAllCategoriesForTree}
                 categoryFilterSlug={categoryFilterSlug}
               />
             ) : (
@@ -487,7 +581,7 @@ export function CatalogueClient({
                 </Card>
               </Link>
             )}
-            {categories.map((cat) => (
+            {visibleRootCategories.map((cat) => (
               <Link key={cat.id} href={`/dashboard/courses/category/${cat.slug}`}>
                 <Card
                   className={`h-full transition-colors hover:border-primary/50 ${
@@ -542,7 +636,7 @@ export function CatalogueClient({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Toutes les catégories</SelectItem>
-            {categories.map((cat) => (
+            {visibleRootCategories.map((cat) => (
               <SelectItem key={cat.id} value={cat.slug}>
                 {cat.label}
               </SelectItem>

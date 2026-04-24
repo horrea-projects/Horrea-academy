@@ -33,6 +33,9 @@ export default async function MissionPage({ params }: Props) {
   const courseFromFile = getCourseBySlug(slug);
   let fromDb = courseFromFile ? null : await getCourseBySlugFromDb(slug);
   if (!fromDb && isAdmin) fromDb = await getCourseBySlugFromDb(slug, { includeUnpublished: true });
+  if (!fromDb && user && !courseFromFile) {
+    fromDb = await getCourseBySlugFromDb(slug, { includeUnpublished: true });
+  }
   const course = courseFromFile ?? fromDb?.course;
   const mission = courseFromFile ? getMission(slug, missionId) : fromDb?.missions?.find((m) => m.id === missionId);
   if (!course || !mission) notFound();
