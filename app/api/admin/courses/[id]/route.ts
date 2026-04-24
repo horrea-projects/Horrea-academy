@@ -24,7 +24,7 @@ export async function GET(
     return NextResponse.json({ error: "ID manquant" }, { status: 400 });
   }
 
-  let courseResult = await supabaseAdmin
+  let courseResult: { data: unknown; error: { code?: string; message?: string } | null } = await supabaseAdmin
     .from("courses")
     .select("id, slug, title, description, duration, category_id, published, status, added_at, created_by, onboarding_title, onboarding_content, onboarding_presentation_embed_url, onboarding_quiz_sheet_name, final_quiz_sheet_id, quiz_spreadsheet_id, final_quiz_sheet_name, final_quiz_min_score, categories(id, slug, label, icon)")
     .eq("id", id)
@@ -53,7 +53,7 @@ export async function GET(
   const withStatus = course as { status?: string; published?: boolean } & typeof course;
   if (withStatus.status == null) (withStatus as { status: string }).status = withStatus.published ? "published" : "draft";
 
-  let modulesResult = await supabaseAdmin
+  let modulesResult: { data: unknown; error: { code?: string; message?: string } | null } = await supabaseAdmin
     .from("course_modules")
     .select("id, module_slug, title, description, duration, video_embed_url, document_embed_url, presentation_embed_url, quiz_sheet_id, quiz_sheet_name, mission_id_slug, content, position, min_quiz_score")
     .eq("course_id", id)
@@ -65,7 +65,7 @@ export async function GET(
       .eq("course_id", id)
       .order("position", { ascending: true });
   }
-  const modules = modulesResult.data ?? [];
+  const modules = (modulesResult.data ?? []) as Array<Record<string, unknown>>;
 
   return NextResponse.json({
     ...withStatus,
