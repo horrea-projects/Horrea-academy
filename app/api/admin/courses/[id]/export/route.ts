@@ -99,14 +99,14 @@ export async function GET(
     final_quiz_sheet_id?: string | null;
     final_quiz_sheet_name?: string | null;
     final_quiz_min_score?: number | null;
-    categories?: { slug: string } | null;
+    categories?: Array<{ slug: string }> | { slug: string } | null;
   };
   if (!("onboarding_presentation_embed_url" in c)) (c as Record<string, unknown>).onboarding_presentation_embed_url = null;
   if (!("final_quiz_sheet_id" in c)) (c as Record<string, unknown>).final_quiz_sheet_id = null;
   if (!("final_quiz_sheet_name" in c)) (c as Record<string, unknown>).final_quiz_sheet_name = null;
   if (!("final_quiz_min_score" in c)) (c as Record<string, unknown>).final_quiz_min_score = null;
 
-  const categorySlug = c.categories?.slug ?? null;
+  const categorySlug = Array.isArray(c.categories) ? (c.categories[0]?.slug ?? null) : (c.categories?.slug ?? null);
 
   let modulesRows = await supabaseAdmin
     .from("course_modules")
