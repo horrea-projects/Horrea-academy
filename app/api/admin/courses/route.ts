@@ -34,8 +34,8 @@ export async function GET() {
   }
 
   const courses = (coursesData ?? []) as Array<Record<string, unknown>>;
-  const courseIds = courses.map((c: { id: string }) => c.id);
-  const clerkIds = [...new Set(courses.map((c: { created_by?: string | null }) => c.created_by).filter(Boolean))] as string[];
+  const courseIds = courses.map((c) => (c.id as string)).filter(Boolean);
+  const clerkIds = [...new Set(courses.map((c) => c.created_by as string | null | undefined).filter(Boolean))] as string[];
 
   const [moduleCountRes, progressRes, usersRes] = await Promise.all([
     courseIds.length > 0
@@ -56,7 +56,7 @@ export async function GET() {
     const cid = (row as { course_id: string }).course_id;
     moduleCountByCourseId[cid] = (moduleCountByCourseId[cid] ?? 0) + 1;
   }
-  const slugById = new Map(courses.map((c: { id: string; slug: string }) => [c.id, c.slug]));
+  const slugById = new Map(courses.map((c) => [c.id as string, c.slug as string]));
   const totalModulesBySlug: Record<string, number> = {};
   for (const c of courses) {
     const id = (c as { id: string }).id;
