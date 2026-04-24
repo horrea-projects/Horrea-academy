@@ -19,7 +19,7 @@ export async function GET() {
   const selectCols = "id, slug, label, icon, onboarding_title, onboarding_content, onboarding_presentation_embed_url, onboarding_quiz_sheet_id, onboarding_quiz_sheet_name";
   const selectColsWithoutQuiz = "id, slug, label, icon, onboarding_title, onboarding_content, onboarding_presentation_embed_url";
   const selectColsMinimal = "id, slug, label, icon";
-  let result = await supabaseAdmin
+  let result: { data: unknown; error: { code?: string; message?: string } | null } = await supabaseAdmin
     .from("categories")
     .select(`${selectCols}, parent_id, created_by, approved, status`)
     .order("label");
@@ -201,7 +201,7 @@ export async function POST(req: NextRequest) {
     approved: status === "published",
   } as Record<string, unknown>;
 
-  let result = await supabaseAdmin
+  let result: { data: unknown; error: { code?: string; message?: string } | null } = await supabaseAdmin
     .from("categories")
     .insert(insertPayload)
     .select(`${selectCols}, parent_id, created_by, approved, status`)
