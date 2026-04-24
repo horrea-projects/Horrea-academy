@@ -159,7 +159,7 @@ export async function PATCH(
     if (body.final_quiz_sheet_name !== undefined) updates.final_quiz_sheet_name = body.final_quiz_sheet_name?.trim() || null;
     if (body.final_quiz_min_score !== undefined) {
       const v = body.final_quiz_min_score;
-      updates.final_quiz_min_score = (v !== null && v !== "" && !Number.isNaN(Number(v))) ? Number(v) : null;
+      updates.final_quiz_min_score = v !== null && !Number.isNaN(v) ? v : null;
     }
 
     if (Object.keys(updates).length > 0) {
