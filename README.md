@@ -6,10 +6,10 @@ Plateforme interne de formation pour les équipes Horrea. Parcours pratiques aut
 
 - **Frontend** : Next.js 16, React 19, Tailwind CSS, shadcn/ui
 - **Auth** : Clerk (connexion Google SSO)
-- **Contenu** : JSON dans le repo (`/content/courses`, `/content/modules`, `/content/missions`)
+- **Contenu** : import/export JSON + gestion via interface d'administration (persistance Supabase)
 - **Vidéos** : Google Drive (embed iframe)
 - **Quiz & progression** : Google Sheets via Netlify Functions (compte de service)
-- **Hébergement** : Netlify
+- **Hébergement** : Coolify (VPS Hostinger, proxy Traefik)
 
 ## Prérequis
 
@@ -47,27 +47,39 @@ Plateforme interne de formation pour les équipes Horrea. Parcours pratiques aut
 
    Ouvrir [http://localhost:3000](http://localhost:3000). Vous serez redirigé vers la page de connexion Clerk puis, après authentification, vers le dashboard.
 
-## Déploiement sur Netlify
+## Deploiement sur Coolify (VPS)
 
-1. **Connecter le dépôt**  
-   Dans Netlify : New site → Import an existing project → choisir le repo.
+1. **Connecter le depot**
+   - Dans Coolify : creer une nouvelle application depuis le repository GitHub.
+   - Build pack : Nixpacks (Node.js).
+   - Port interne de l'application : `3000`.
 
-2. **Build**
-
-   - Build command : `npm run build` (ou laisser Netlify détecter Next.js)
-   - Publish directory : géré par le plugin Next.js (souvent `.next`)
-
-3. **Variables d’environnement** (Netlify → Site settings → Environment variables)
-
+2. **Variables d'environnement (Coolify)**
+   Renseigner au minimum :
    - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
    - `CLERK_SECRET_KEY`
-   - Pour la progression et les quiz :
-     - `GOOGLE_SERVICE_ACCOUNT_JSON` (contenu JSON du fichier de clé du compte de service)
-     - `PROGRESSION_SHEET_ID` (ID du Google Sheet « Progression »)
-     - `QUIZ_RESULTS_SHEET_ID` (ID du Google Sheet « Résultats quiz »)
+   - `GOOGLE_SERVICE_ACCOUNT_JSON` (si quiz/progression Google Sheets)
+   - `PROGRESSION_SHEET_ID` (si active)
+   - `QUIZ_RESULTS_SHEET_ID` (si active)
+   - `NIXPACKS_NODE_VERSION=22`
 
-4. **Clerk en production**  
-   Dans le dashboard Clerk, configurer l’URL du site Netlify et, pour Google SSO, créer des identifiants OAuth dans Google Cloud Console puis les renseigner dans Clerk (custom credentials).
+3. **Domaine**
+   - Ajouter le FQDN dans le champ `Domains` de l'application.
+   - Exemple : `https://academy.horrea.fr:3000` (le `:3000` cible le port interne du conteneur).
+   - Cote DNS, creer un enregistrement `A` vers l'IP du VPS (ex. `academy -> 72.60.186.18`).
+
+4. **Deploiement**
+   - Lancer le deploiement depuis Coolify.
+   - Verifier que l'application repond bien sur le domaine configure.
+
+5. **Clerk en production**
+   Dans le dashboard Clerk, configurer l'URL de production (ex. `https://academy.horrea.fr`) et les redirect URLs associees.
+
+### Notes operations proxy
+
+- Le proxy Coolify (Traefik) doit etre le frontal principal sur les ports `80/443`.
+- Si vous maintenez des routes manuelles dans `/data/coolify/proxy/dynamic/*.yaml`, verifier les backends apres chaque redeploiement (les noms de conteneurs peuvent changer).
+- En phase de test via `sslip.io`, un certificat auto-signe peut etre servi (avertissement navigateur normal tant que Let's Encrypt n'est pas actif pour ce host).
 
 ## Google : OAuth vs compte de service
 

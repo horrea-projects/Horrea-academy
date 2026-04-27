@@ -241,10 +241,11 @@ export function CatalogueClient({
   }, [categories]);
 
   const allowedCourseSlugs = useMemo(() => {
+    if (categoryPage) return null;
     if (metierFilterId === "all") return null;
     const metier = metiersWithFormations.find((m) => m.id === metierFilterId);
     return new Set(metier?.course_slugs ?? []);
-  }, [metierFilterId, metiersWithFormations]);
+  }, [categoryPage, metierFilterId, metiersWithFormations]);
 
   const metierScopedCourses = useMemo(() => {
     if (!allowedCourseSlugs) return initialCourses;
@@ -526,7 +527,7 @@ export function CatalogueClient({
         </div>
       )}
 
-      {metiersWithFormations.length > 0 && (
+      {!categoryPage && metiersWithFormations.length > 0 && (
         <section className="space-y-2">
           <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Parcours métiers</p>
           <div className="flex flex-wrap items-center gap-2">

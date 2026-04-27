@@ -2,9 +2,12 @@
 
 Ce document décrit comment une formation s’intègre dans la plateforme et comment créer une nouvelle formation à partir des templates JSON.
 
-## 1. Comment une formation s’intègre aujourd’hui
+## 1. Comment une formation s'integre aujourd'hui
 
-Le contenu est **piloté par des fichiers JSON** dans le dossier `content/`. Il n’y a pas d’interface d’administration : toute nouvelle formation est ajoutée en créant ou modifiant ces fichiers.
+Le contenu peut etre gere de deux manieres complementaires :
+
+- **Mode admin (recommande)** : creation/import via l'interface d'administration (`/dashboard/.../admin/courses`) avec persistance en base.
+- **Mode fichiers JSON** : utile pour preparer un package de contenu, reimporter en masse, ou versionner des templates.
 
 ### Arborescence
 
@@ -27,14 +30,20 @@ content/
 - **Modules** : un fichier par module dans `content/modules/{courseSlug}/{moduleId}.json`. Les `moduleId` doivent être ceux listés dans le cours.
 - **Missions** : optionnel, dans `content/missions/{courseSlug}/{missionId}.json`, référencées par le cours et éventuellement par un module via `missionId`.
 
-Le chargement est fait côté serveur dans `lib/content.ts` (pas de base de données).
+Le catalogue et les details des formations sont servis par les routes API et la couche de donnees applicative (`lib/courses-catalogue.ts`, routes `app/api/courses` et `app/api/admin/courses`).
 
-### Étapes pour qu’une nouvelle formation apparaisse
+### Etapes pour qu'une nouvelle formation apparaisse
 
-1. Ajouter une entrée dans `content/courses/index.json`.
-2. Créer `content/courses/{slug}.json`.
-3. Créer les JSON des modules dans `content/modules/{slug}/`.
-4. Optionnel : créer les JSON des missions dans `content/missions/{slug}/`.
+**Option A - via l'admin (recommande)**  
+1. Aller dans l'admin des formations et creer/importer une formation.
+2. Completer les modules et missions depuis l'interface.
+3. Publier la formation.
+
+**Option B - via fichiers JSON**
+1. Ajouter une entree dans `content/courses/index.json`.
+2. Creer `content/courses/{slug}.json`.
+3. Creer les JSON des modules dans `content/modules/{slug}/`.
+4. Optionnel : creer les JSON des missions dans `content/missions/{slug}/`.
 
 ---
 
