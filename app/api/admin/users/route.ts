@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import sql, { dbResult } from "@/lib/db";
 import { getCourseTotals } from "@/lib/courses-catalogue";
 
 export type ProgressRow = {
@@ -33,9 +33,22 @@ async function requireAdmin(_req: NextRequest) {
 }
 
 export async function readProgressRows(): Promise<ProgressRow[]> {
-  const { data, error } = await supabaseAdmin
-    .from("user_progress")
-    .select("email, course_slug, module_id, status, score, type, date");
+  const { data, error } = await dbResult(() =>
+    sql<
+      {
+        email: string;
+        course_slug: string;
+        module_id: string;
+        status: string;
+        score: number | null;
+        type: string | null;
+        date: Date | string | null;
+      }[]
+    >`
+      SELECT email, course_slug, module_id, status, score, type, date
+      FROM user_progress
+    `
+  );
 
   if (error || !data) {
     console.error("Erreur lecture user_progress", error);
@@ -44,7 +57,7 @@ export async function readProgressRows(): Promise<ProgressRow[]> {
 
   return data
     .map((row): ProgressRow | null => {
-      const { email, course_slug, module_id, status, score, type, date } = row as any;
+      const { email, course_slug, module_id, status, score, type, date } = row;
       if (!email || !course_slug || !module_id || !status) return null;
       return {
         email: String(email),
@@ -53,7 +66,7 @@ export async function readProgressRows(): Promise<ProgressRow[]> {
         status: String(status),
         score: typeof score === "number" ? score : score ? Number(score) : undefined,
         type: type ? String(type) : undefined,
-        date: date ? String(date) : undefined
+        date: date ? String(date) : undefined,
       };
     })
     .filter((row): row is ProgressRow => row !== null);
@@ -79,7 +92,7 @@ function aggregateByUser(rows: ProgressRow[], courseTotals: Map<string, CourseTo
         modulesCompletedSet: new Set(),
         perCourseModules: new Map(),
         perCourseMissions: new Map(),
-        lastActivityAt: null
+        lastActivityAt: null,
       });
     }
     const user = byUser.get(key)!;
@@ -109,8 +122,12 @@ function aggregateByUser(rows: ProgressRow[], courseTotals: Map<string, CourseTo
       const totals = courseTotals.get(courseSlug) ?? { totalModules: 0, totalMissions: 0 };
       const completedModules = state.perCourseModules.get(courseSlug)?.size ?? 0;
       const completedMissions = state.perCourseMissions.get(courseSlug)?.size ?? 0;
-      if (totals.totalModules > 0 && totals.totalMissions >= 0 &&
-          completedModules >= totals.totalModules && completedMissions >= totals.totalMissions) {
+      if (
+        totals.totalModules > 0 &&
+        totals.totalMissions >= 0 &&
+        completedModules >= totals.totalModules &&
+        completedMissions >= totals.totalMissions
+      ) {
         coursesCompleted += 1;
       }
     }
@@ -120,7 +137,7 @@ function aggregateByUser(rows: ProgressRow[], courseTotals: Map<string, CourseTo
       modulesCompleted: state.modulesCompletedSet.size,
       coursesCompleted,
       coursesCreated: 0,
-      lastActivityAt: state.lastActivityAt
+      lastActivityAt: state.lastActivityAt,
     });
   }
 
@@ -142,9 +159,20 @@ export async function GET(req: NextRequest) {
 
   try {
     const [appUsersRes, progressRows, coursesByCreatorRes] = await Promise.all([
-      supabaseAdmin.from("app_users").select("clerk_id, email"),
+      dbResult(() =>
+        sql<{ clerk_id: string; email: string }[]>`
+          SELECT clerk_id, email
+          FROM app_users
+        `
+      ),
       readProgressRows(),
-      supabaseAdmin.from("courses").select("created_by").not("created_by", "is", null)
+      dbResult(() =>
+        sql<{ created_by: string }[]>`
+          SELECT created_by
+          FROM courses
+          WHERE created_by IS NOT NULL
+        `
+      ),
     ]);
 
     const slugs = [...new Set(progressRows.map((r) => r.courseSlug))];
@@ -157,7 +185,7 @@ export async function GET(req: NextRequest) {
         email: a.email,
         modulesCompleted: a.modulesCompleted,
         coursesCompleted: a.coursesCompleted,
-        lastActivityAt: a.lastActivityAt
+        lastActivityAt: a.lastActivityAt,
       });
     }
 
@@ -176,7 +204,7 @@ export async function GET(req: NextRequest) {
         modulesCompleted: stats?.modulesCompleted ?? 0,
         coursesCompleted: stats?.coursesCompleted ?? 0,
         coursesCreated: coursesCreatedByClerkId[u.clerk_id] ?? 0,
-        lastActivityAt: stats?.lastActivityAt ?? null
+        lastActivityAt: stats?.lastActivityAt ?? null,
       };
     });
 
@@ -196,4 +224,3 @@ export async function GET(req: NextRequest) {
     );
   }
 }
-

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import sql, { dbResult, dbSingle, isUndefinedColumnError } from "@/lib/db";
 
 async function requireAdmin() {
   const user = await currentUser();
@@ -24,27 +24,38 @@ export async function GET(
     return NextResponse.json({ error: "ID manquant" }, { status: 400 });
   }
 
-  let courseResult: { data: unknown; error: { code?: string; message?: string } | null } = await supabaseAdmin
-    .from("courses")
-    .select("id, slug, title, description, duration, category_id, published, status, added_at, created_by, onboarding_title, onboarding_content, onboarding_presentation_embed_url, onboarding_quiz_sheet_name, final_quiz_sheet_id, quiz_spreadsheet_id, final_quiz_sheet_name, final_quiz_min_score, categories(id, slug, label, icon)")
-    .eq("id", id)
-    .single();
-  if (courseResult.error?.code === "42703" || courseResult.error?.code === "PGRST204") {
-    const msg = courseResult.error?.message ?? "";
-    if (msg.includes("status") || msg.includes("created_by")) {
-      courseResult = await supabaseAdmin
-        .from("courses")
-        .select("id, slug, title, description, duration, category_id, published, added_at, created_by, onboarding_title, onboarding_content, onboarding_presentation_embed_url, onboarding_quiz_sheet_name, final_quiz_sheet_id, quiz_spreadsheet_id, final_quiz_sheet_name, final_quiz_min_score, categories(id, slug, label, icon)")
-        .eq("id", id)
-        .single();
-    }
-    if (courseResult.error && (courseResult.error.code === "42703" || courseResult.error.code === "PGRST204") && courseResult.error?.message?.includes("final_quiz_min_score")) {
-      courseResult = await supabaseAdmin
-        .from("courses")
-        .select("id, slug, title, description, duration, category_id, published, added_at, created_by, onboarding_title, onboarding_content, onboarding_presentation_embed_url, onboarding_quiz_sheet_name, final_quiz_sheet_id, quiz_spreadsheet_id, final_quiz_sheet_name, categories(id, slug, label, icon)")
-        .eq("id", id)
-        .single();
-    }
+  let courseResult = await dbSingle(async () =>
+    await sql<Record<string, unknown>[]>`
+      SELECT c.id, c.slug, c.title, c.description, c.duration, c.category_id, c.published, c.status,
+        c.added_at, c.created_by, c.onboarding_title, c.onboarding_content,
+        c.onboarding_presentation_embed_url, c.onboarding_quiz_sheet_name,
+        c.final_quiz_sheet_id, c.quiz_spreadsheet_id, c.final_quiz_sheet_name, c.final_quiz_min_score,
+        CASE WHEN cat.id IS NULL THEN NULL
+          ELSE json_build_object('id', cat.id, 'slug', cat.slug, 'label', cat.label, 'icon', cat.icon)
+        END AS categories
+      FROM courses c
+      LEFT JOIN categories cat ON cat.id = c.category_id
+      WHERE c.id = ${id}
+      LIMIT 2
+    `
+  );
+  if (isUndefinedColumnError(courseResult.error)) {
+    // Legacy schemas: omit status / created_by / final_quiz_min_score / onboarding quiz cols.
+    courseResult = await dbSingle(async () =>
+      await sql<Record<string, unknown>[]>`
+        SELECT c.id, c.slug, c.title, c.description, c.duration, c.category_id, c.published,
+          c.added_at, c.onboarding_title, c.onboarding_content,
+          c.onboarding_presentation_embed_url,
+          c.final_quiz_sheet_id, c.quiz_spreadsheet_id, c.final_quiz_sheet_name,
+          CASE WHEN cat.id IS NULL THEN NULL
+            ELSE json_build_object('id', cat.id, 'slug', cat.slug, 'label', cat.label, 'icon', cat.icon)
+          END AS categories
+        FROM courses c
+        LEFT JOIN categories cat ON cat.id = c.category_id
+        WHERE c.id = ${id}
+        LIMIT 2
+      `
+    );
   }
   const { data: course, error: courseError } = courseResult;
   if (courseError || !course) {
@@ -53,24 +64,50 @@ export async function GET(
   const withStatus = course as { status?: string; published?: boolean } & typeof course;
   if (withStatus.status == null) (withStatus as { status: string }).status = withStatus.published ? "published" : "draft";
 
-  let modulesResult: { data: unknown; error: { code?: string; message?: string } | null } = await supabaseAdmin
-    .from("course_modules")
-    .select("id, module_slug, title, description, duration, video_embed_url, document_embed_url, presentation_embed_url, quiz_sheet_id, quiz_sheet_name, mission_id_slug, content, position, min_quiz_score")
-    .eq("course_id", id)
-    .order("position", { ascending: true });
-  if (modulesResult.error && (modulesResult.error.code === "42703" || modulesResult.error.code === "PGRST204" || modulesResult.error.message?.includes("schema cache") || modulesResult.error.message?.includes("min_quiz_score") || modulesResult.error.message?.includes("quiz_sheet_name"))) {
-    modulesResult = await supabaseAdmin
-      .from("course_modules")
-      .select("id, module_slug, title, description, duration, video_embed_url, document_embed_url, presentation_embed_url, quiz_sheet_id, mission_id_slug, content, position")
-      .eq("course_id", id)
-      .order("position", { ascending: true });
+  let modulesResult = await dbResult(async () =>
+    await sql<Record<string, unknown>[]>`
+      SELECT id, module_slug, title, description, duration, video_embed_url, document_embed_url,
+        presentation_embed_url, quiz_sheet_id, quiz_sheet_name, mission_id_slug, content, position,
+        min_quiz_score
+      FROM course_modules
+      WHERE course_id = ${id}
+      ORDER BY position ASC
+    `
+  );
+  if (
+    modulesResult.error &&
+    (isUndefinedColumnError(modulesResult.error) ||
+      modulesResult.error.message?.includes("min_quiz_score") ||
+      modulesResult.error.message?.includes("quiz_sheet_name"))
+  ) {
+    modulesResult = await dbResult(async () =>
+      await sql<Record<string, unknown>[]>`
+        SELECT id, module_slug, title, description, duration, video_embed_url, document_embed_url,
+          presentation_embed_url, quiz_sheet_id, mission_id_slug, content, position
+        FROM course_modules
+        WHERE course_id = ${id}
+        ORDER BY position ASC
+      `
+    );
   }
   const modules = (modulesResult.data ?? []) as Array<Record<string, unknown>>;
 
+  const { data: missionsData } = await dbResult(async () =>
+    await sql<Record<string, unknown>[]>`
+      SELECT id, mission_slug, title, context, objective, instructions, deliverable
+      FROM course_missions
+      WHERE course_id = ${id}
+    `
+  );
+
   return NextResponse.json({
     ...withStatus,
-    modules: modules.map((m) => ({ ...m, quiz_sheet_name: (m as { quiz_sheet_name?: string }).quiz_sheet_name ?? "", min_quiz_score: (m as { min_quiz_score?: number | null }).min_quiz_score ?? "" })),
-    missions: (await supabaseAdmin.from("course_missions").select("id, mission_slug, title, context, objective, instructions, deliverable").eq("course_id", id)).data ?? []
+    modules: modules.map((m) => ({
+      ...m,
+      quiz_sheet_name: (m as { quiz_sheet_name?: string }).quiz_sheet_name ?? "",
+      min_quiz_score: (m as { min_quiz_score?: number | null }).min_quiz_score ?? "",
+    })),
+    missions: missionsData ?? [],
   });
 }
 
@@ -163,9 +200,13 @@ export async function PATCH(
     }
 
     if (Object.keys(updates).length > 0) {
-      let updateResult = await supabaseAdmin.from("courses").update(updates).eq("id", id);
-      const schemaError = updateResult.error?.code === "42703" || updateResult.error?.code === "PGRST204" || updateResult.error?.message?.includes("schema cache");
-      if (updateResult.error && schemaError) {
+      let updateResult = await dbResult(async () => {
+        await sql`
+          UPDATE courses SET ${sql(updates, ...Object.keys(updates))} WHERE id = ${id}
+        `;
+        return null;
+      });
+      if (updateResult.error && isUndefinedColumnError(updateResult.error)) {
         const fallback = { ...updates } as Record<string, unknown>;
         const msg = updateResult.error?.message ?? "";
         if (msg.includes("status")) {
@@ -176,7 +217,16 @@ export async function PATCH(
         }
         if (msg.includes("created_by")) delete fallback.created_by;
         if (msg.includes("final_quiz_min_score")) delete fallback.final_quiz_min_score;
-        updateResult = await supabaseAdmin.from("courses").update(fallback).eq("id", id);
+        if (Object.keys(fallback).length > 0) {
+          updateResult = await dbResult(async () => {
+            await sql`
+              UPDATE courses SET ${sql(fallback, ...Object.keys(fallback))} WHERE id = ${id}
+            `;
+            return null;
+          });
+        } else {
+          updateResult = { data: null, error: null };
+        }
       }
       if (updateResult.error) {
         console.error(updateResult.error);
@@ -185,7 +235,10 @@ export async function PATCH(
     }
 
     if (body.modules !== undefined) {
-      const delMod = await supabaseAdmin.from("course_modules").delete().eq("course_id", id);
+      const delMod = await dbResult(async () => {
+        await sql`DELETE FROM course_modules WHERE course_id = ${id}`;
+        return null;
+      });
       if (delMod.error) {
         console.error(delMod.error);
         return NextResponse.json({ error: "Erreur suppression modules: " + delMod.error.message }, { status: 500 });
@@ -222,10 +275,53 @@ export async function PATCH(
           content: m.content ?? null,
           position: m.position,
         }));
-        let insMod = await supabaseAdmin.from("course_modules").insert(fullRows);
-        const schemaErr = insMod.error?.code === "42703" || insMod.error?.code === "PGRST204" || insMod.error?.message?.includes("schema cache") || insMod.error?.message?.includes("min_quiz_score") || insMod.error?.message?.includes("quiz_sheet_name");
+        let insMod = await dbResult(async () => {
+          await sql`
+            INSERT INTO course_modules ${sql(
+              fullRows,
+              "course_id",
+              "module_slug",
+              "title",
+              "description",
+              "duration",
+              "video_embed_url",
+              "document_embed_url",
+              "presentation_embed_url",
+              "quiz_sheet_id",
+              "quiz_sheet_name",
+              "mission_id_slug",
+              "content",
+              "position",
+              "min_quiz_score"
+            )}
+          `;
+          return null;
+        });
+        const schemaErr =
+          isUndefinedColumnError(insMod.error) ||
+          insMod.error?.message?.includes("min_quiz_score") ||
+          insMod.error?.message?.includes("quiz_sheet_name");
         if (insMod.error && schemaErr) {
-          insMod = await supabaseAdmin.from("course_modules").insert(baseRows);
+          insMod = await dbResult(async () => {
+            await sql`
+              INSERT INTO course_modules ${sql(
+                baseRows,
+                "course_id",
+                "module_slug",
+                "title",
+                "description",
+                "duration",
+                "video_embed_url",
+                "document_embed_url",
+                "presentation_embed_url",
+                "quiz_sheet_id",
+                "mission_id_slug",
+                "content",
+                "position"
+              )}
+            `;
+            return null;
+          });
           if (!insMod.error && body.modules.some((m) => m.quiz_sheet_name?.trim() || m.min_quiz_score != null)) {
             modulesQuizNotSaved = true;
           }
@@ -238,7 +334,10 @@ export async function PATCH(
     }
 
     if (body.missions !== undefined) {
-      const delMiss = await supabaseAdmin.from("course_missions").delete().eq("course_id", id);
+      const delMiss = await dbResult(async () => {
+        await sql`DELETE FROM course_missions WHERE course_id = ${id}`;
+        return null;
+      });
       if (delMiss.error) {
         console.error(delMiss.error);
         return NextResponse.json({ error: "Erreur suppression missions: " + delMiss.error.message }, { status: 500 });
@@ -253,7 +352,21 @@ export async function PATCH(
           instructions: m.instructions ?? [],
           deliverable: m.deliverable ?? ""
         }));
-        const insMiss = await supabaseAdmin.from("course_missions").insert(rows);
+        const insMiss = await dbResult(async () => {
+          await sql`
+            INSERT INTO course_missions ${sql(
+              rows,
+              "course_id",
+              "mission_slug",
+              "title",
+              "context",
+              "objective",
+              "instructions",
+              "deliverable"
+            )}
+          `;
+          return null;
+        });
         if (insMiss.error) {
           console.error(insMiss.error);
           return NextResponse.json({ error: "Erreur enregistrement missions: " + insMiss.error.message }, { status: 500 });
@@ -282,7 +395,10 @@ export async function DELETE(
     return NextResponse.json({ error: "ID manquant" }, { status: 400 });
   }
 
-  const { error } = await supabaseAdmin.from("courses").delete().eq("id", id);
+  const { error } = await dbResult(async () => {
+    await sql`DELETE FROM courses WHERE id = ${id}`;
+    return null;
+  });
   if (error) {
     console.error(error);
     return NextResponse.json({ error: error.message }, { status: 500 });

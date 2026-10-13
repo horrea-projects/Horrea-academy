@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import sql, { dbResult, dbSingle, isUndefinedColumnError } from "@/lib/db";
 
 async function requireAdmin() {
   const user = await currentUser();
@@ -16,16 +16,18 @@ export async function GET() {
     return new NextResponse("Forbidden", { status: 403 });
   }
 
-  let coursesResult: { data: unknown; error: { code?: string; message?: string } | null } = await supabaseAdmin
-    .from("courses")
-    .select("id, slug, title, description, duration, published, status, added_at, category_id, created_by, categories(slug, label, icon)")
-    .order("added_at", { ascending: false });
-  if (coursesResult.error?.code === "42703") {
-    coursesResult = await supabaseAdmin
-      .from("courses")
-      .select("id, slug, title, description, duration, published, added_at, category_id, created_by, categories(slug, label, icon)")
-      .order("added_at", { ascending: false });
-  }
+  // c.* never errors on missing optional columns (status, etc.); synthesize status below.
+  const coursesResult = await dbResult(async () =>
+    await sql<Record<string, unknown>[]>`
+      SELECT c.*,
+        CASE WHEN cat.id IS NULL THEN NULL
+          ELSE json_build_object('slug', cat.slug, 'label', cat.label, 'icon', cat.icon)
+        END AS categories
+      FROM courses c
+      LEFT JOIN categories cat ON cat.id = c.category_id
+      ORDER BY c.added_at DESC NULLS LAST
+    `
+  );
   const { data: coursesData, error } = coursesResult;
 
   if (error) {
@@ -39,16 +41,26 @@ export async function GET() {
 
   const [moduleCountRes, progressRes, usersRes] = await Promise.all([
     courseIds.length > 0
-      ? supabaseAdmin.from("course_modules").select("course_id").in("course_id", courseIds)
-      : Promise.resolve({ data: [] as { course_id: string }[] }),
-    supabaseAdmin
-      .from("user_progress")
-      .select("email, course_slug, module_id")
-      .eq("type", "module")
-      .eq("status", "completed"),
+      ? dbResult(async () =>
+          await sql<{ course_id: string }[]>`
+            SELECT course_id FROM course_modules WHERE course_id = ANY(${courseIds})
+          `
+        )
+      : Promise.resolve({ data: [] as { course_id: string }[], error: null }),
+    dbResult(async () =>
+      await sql<{ email: string; course_slug: string; module_id: string }[]>`
+        SELECT email, course_slug, module_id
+        FROM user_progress
+        WHERE type = ${"module"} AND status = ${"completed"}
+      `
+    ),
     clerkIds.length > 0
-      ? supabaseAdmin.from("app_users").select("clerk_id, name, email").in("clerk_id", clerkIds)
-      : Promise.resolve({ data: [] as { clerk_id: string; name: string | null; email: string }[] })
+      ? dbResult(async () =>
+          await sql<{ clerk_id: string; name: string | null; email: string }[]>`
+            SELECT clerk_id, name, email FROM app_users WHERE clerk_id = ANY(${clerkIds})
+          `
+        )
+      : Promise.resolve({ data: [] as { clerk_id: string; name: string | null; email: string }[], error: null }),
   ]);
 
   const moduleCountByCourseId: Record<string, number> = {};
@@ -56,7 +68,6 @@ export async function GET() {
     const cid = (row as { course_id: string }).course_id;
     moduleCountByCourseId[cid] = (moduleCountByCourseId[cid] ?? 0) + 1;
   }
-  const slugById = new Map(courses.map((c) => [c.id as string, c.slug as string]));
   const totalModulesBySlug: Record<string, number> = {};
   for (const c of courses) {
     const id = (c as { id: string }).id;
@@ -187,18 +198,28 @@ export async function POST(req: NextRequest) {
       final_quiz_sheet_name: final_quiz_sheet_name?.trim() || null,
       final_quiz_min_score: final_quiz_min_score != null && !Number.isNaN(final_quiz_min_score) ? final_quiz_min_score : null,
     } as Record<string, unknown>;
-    let insertResult = await supabaseAdmin.from("courses").insert(insertPayload).select("id, slug").single();
-    // Si colonne absente (PGRST204 / schema cache), réessayer sans final_quiz_min_score
-    const insertSchemaError = insertResult.error?.code === "42703" || insertResult.error?.code === "PGRST204" ||
-      insertResult.error?.message?.includes("schema cache") || insertResult.error?.message?.includes("final_quiz_min_score");
+
+    let insertResult = await dbSingle(async () =>
+      await sql<{ id: string; slug: string }[]>`
+        INSERT INTO courses ${sql(insertPayload, ...Object.keys(insertPayload))}
+        RETURNING id, slug
+      `
+    );
+    // Si colonne absente, réessayer sans final_quiz_min_score
+    const insertSchemaError =
+      isUndefinedColumnError(insertResult.error) ||
+      insertResult.error?.message?.includes("final_quiz_min_score");
     if (insertResult.error && insertSchemaError) {
       const fallback = { ...insertPayload } as Record<string, unknown>;
       delete fallback.final_quiz_min_score;
-      insertResult = await supabaseAdmin.from("courses").insert(fallback).select("id, slug").single();
-    }
-    if (insertResult.error?.code === "42703" && insertResult.error?.message?.includes("status")) {
-      (insertPayload as { status?: string }).status = courseStatus;
-      insertResult = await supabaseAdmin.from("courses").insert(insertPayload).select("id, slug").single();
+      // Never add `status` here: payload intentionally uses `published` only.
+      // Adding a missing column would fail again.
+      insertResult = await dbSingle(async () =>
+        await sql<{ id: string; slug: string }[]>`
+          INSERT INTO courses ${sql(fallback, ...Object.keys(fallback))}
+          RETURNING id, slug
+        `
+      );
     }
     const { data: course, error: courseError } = insertResult;
 
@@ -238,10 +259,53 @@ export async function POST(req: NextRequest) {
         content: m.content ?? null,
         position: m.position,
       }));
-      let modResult = await supabaseAdmin.from("course_modules").insert(fullRows);
-      const modSchemaErr = modResult.error?.code === "42703" || modResult.error?.code === "PGRST204" || modResult.error?.message?.includes("schema cache") || modResult.error?.message?.includes("min_quiz_score") || modResult.error?.message?.includes("quiz_sheet_name");
+      let modResult = await dbResult(async () => {
+        await sql`
+          INSERT INTO course_modules ${sql(
+            fullRows,
+            "course_id",
+            "module_slug",
+            "title",
+            "description",
+            "duration",
+            "video_embed_url",
+            "document_embed_url",
+            "presentation_embed_url",
+            "quiz_sheet_id",
+            "quiz_sheet_name",
+            "mission_id_slug",
+            "content",
+            "position",
+            "min_quiz_score"
+          )}
+        `;
+        return null;
+      });
+      const modSchemaErr =
+        isUndefinedColumnError(modResult.error) ||
+        modResult.error?.message?.includes("min_quiz_score") ||
+        modResult.error?.message?.includes("quiz_sheet_name");
       if (modResult.error && modSchemaErr) {
-        modResult = await supabaseAdmin.from("course_modules").insert(baseRows);
+        modResult = await dbResult(async () => {
+          await sql`
+            INSERT INTO course_modules ${sql(
+              baseRows,
+              "course_id",
+              "module_slug",
+              "title",
+              "description",
+              "duration",
+              "video_embed_url",
+              "document_embed_url",
+              "presentation_embed_url",
+              "quiz_sheet_id",
+              "mission_id_slug",
+              "content",
+              "position"
+            )}
+          `;
+          return null;
+        });
         if (!modResult.error && modules.some((m) => m.quiz_sheet_name?.trim() || m.min_quiz_score != null)) {
           modulesQuizNotSaved = true;
         }
@@ -262,7 +326,21 @@ export async function POST(req: NextRequest) {
         instructions: m.instructions ?? [],
         deliverable: m.deliverable ?? ""
       }));
-      const { error: missErr } = await supabaseAdmin.from("course_missions").insert(missionRows);
+      const { error: missErr } = await dbResult(async () => {
+        await sql`
+          INSERT INTO course_missions ${sql(
+            missionRows,
+            "course_id",
+            "mission_slug",
+            "title",
+            "context",
+            "objective",
+            "instructions",
+            "deliverable"
+          )}
+        `;
+        return null;
+      });
       if (missErr) {
         console.error(missErr);
         return NextResponse.json({ error: "Erreur enregistrement missions: " + missErr.message }, { status: 500 });

@@ -5,7 +5,7 @@ import { currentUser } from "@clerk/nextjs/server";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/sidebar/app-sidebar";
 import { SiteHeader } from "@/components/layout/header";
-import { syncClerkUserToSupabase } from "@/lib/supabase/sync-clerk-user";
+import { syncClerkUser } from "@/lib/sync-clerk-user";
 
 export default async function AuthLayout({
   children
@@ -14,8 +14,8 @@ export default async function AuthLayout({
 }>) {
   const user = await currentUser();
   if (user) {
-    syncClerkUserToSupabase(user).catch((err) =>
-      console.error("Sync Clerk → Supabase:", err)
+    syncClerkUser(user).catch((err) =>
+      console.error("Sync Clerk → Postgres:", err)
     );
   }
 

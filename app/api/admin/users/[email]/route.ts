@@ -4,7 +4,7 @@ import { clerkClient, currentUser } from "@clerk/nextjs/server";
 import { getCourseBySlug, getModule } from "@/lib/content";
 import { getCourseBySlugFromDb, getCourseTotals } from "@/lib/courses-catalogue";
 import { getUserMetiers } from "@/lib/metiers";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import sql, { dbMaybeSingle, dbResult } from "@/lib/db";
 import { readProgressRows, type ProgressRow } from "../route";
 
 type CourseDetailSummary = {
@@ -85,10 +85,14 @@ function buildUserDetail(
     if (status !== "completed") continue;
     if (type === "module") {
       completedModuleKeys.add(`${courseSlug}:${moduleId}`);
-      if (!perCourse.has(courseSlug)) perCourse.set(courseSlug, { completedModules: new Set(), completedMissions: new Set() });
+      if (!perCourse.has(courseSlug)) {
+        perCourse.set(courseSlug, { completedModules: new Set(), completedMissions: new Set() });
+      }
       perCourse.get(courseSlug)!.completedModules.add(moduleId);
     } else if (type === "mission") {
-      if (!perCourse.has(courseSlug)) perCourse.set(courseSlug, { completedModules: new Set(), completedMissions: new Set() });
+      if (!perCourse.has(courseSlug)) {
+        perCourse.set(courseSlug, { completedModules: new Set(), completedMissions: new Set() });
+      }
       perCourse.get(courseSlug)!.completedMissions.add(moduleId);
     }
   }
@@ -105,8 +109,14 @@ function buildUserDetail(
     const missionsCompleted = state.completedMissions.size;
     const totalElements = totalModules + totalMissions;
     const completedElements = modulesCompleted + missionsCompleted;
-    const completionPercent = totalElements > 0 ? Math.round((completedElements / totalElements) * 100) : 0;
-    if (totalModules > 0 && totalMissions >= 0 && modulesCompleted >= totalModules && missionsCompleted >= totalMissions) {
+    const completionPercent =
+      totalElements > 0 ? Math.round((completedElements / totalElements) * 100) : 0;
+    if (
+      totalModules > 0 &&
+      totalMissions >= 0 &&
+      modulesCompleted >= totalModules &&
+      missionsCompleted >= totalMissions
+    ) {
       coursesCompleted += 1;
     }
     courseSummaries.push({
@@ -116,7 +126,7 @@ function buildUserDetail(
       modulesCompleted,
       totalMissions,
       missionsCompleted,
-      completionPercent
+      completionPercent,
     });
   }
 
@@ -138,11 +148,10 @@ function buildUserDetail(
         moduleId: row.moduleId,
         moduleTitle: module?.title ?? row.moduleId,
         courseTitle: course?.title ?? row.courseSlug,
-        date: row.date ?? null
+        date: row.date ?? null,
       };
     });
 
-  // Agrégation des scores quiz par (courseSlug, moduleId) : nombre d'essais et meilleur score
   const quizByKey = new Map<string, { attempts: number; bestScore: number }>();
   for (const row of rows) {
     if (row.type !== "quiz" || row.moduleId == null) continue;
@@ -167,7 +176,9 @@ function buildUserDetail(
       bestScore: Math.round(bestScore),
     });
   }
-  quizStats.sort((a, b) => a.courseTitle.localeCompare(b.courseTitle) || a.moduleTitle.localeCompare(b.moduleTitle));
+  quizStats.sort(
+    (a, b) => a.courseTitle.localeCompare(b.courseTitle) || a.moduleTitle.localeCompare(b.moduleTitle)
+  );
 
   return {
     email,
@@ -184,12 +195,17 @@ function buildUserDetail(
   };
 }
 
-async function getAppUserByEmail(email: string): Promise<{ name: string | null; is_admin: boolean; clerk_id: string | null } | null> {
-  const { data } = await supabaseAdmin
-    .from("app_users")
-    .select("name, is_admin, clerk_id")
-    .ilike("email", email)
-    .maybeSingle();
+async function getAppUserByEmail(
+  email: string
+): Promise<{ name: string | null; is_admin: boolean; clerk_id: string | null } | null> {
+  const { data } = await dbMaybeSingle(() =>
+    sql<{ name: string | null; is_admin: boolean; clerk_id: string | null }[]>`
+      SELECT name, is_admin, clerk_id
+      FROM app_users
+      WHERE email ILIKE ${email}
+      LIMIT 2
+    `
+  );
   return data as { name: string | null; is_admin: boolean; clerk_id: string | null } | null;
 }
 
@@ -209,7 +225,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ emai
   try {
     const [rows, appUser] = await Promise.all([
       readProgressRows(),
-      getAppUserByEmail(decodedEmail)
+      getAppUserByEmail(decodedEmail),
     ]);
     const userRows = filterRowsForEmail(rows, decodedEmail);
     if (userRows.length === 0) {
@@ -228,11 +244,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ emai
     const slugs = [...new Set(userRows.map((r) => r.courseSlug))];
     const [totalsList, titlesList] = await Promise.all([
       Promise.all(slugs.map((slug) => getCourseTotals(slug))),
-      Promise.all(slugs.map((slug) => getCourseBySlug(slug)))
+      Promise.all(slugs.map((slug) => getCourseBySlug(slug))),
     ]);
     const courseTotals = new Map(slugs.map((slug, i) => [slug, totalsList[i]]));
     const courseTitles = new Map(slugs.map((slug, i) => [slug, titlesList[i]?.title ?? slug]));
-    const fromDbList = await Promise.all(slugs.map((s) => getCourseBySlugFromDb(s, { includeUnpublished: true })));
+    const fromDbList = await Promise.all(
+      slugs.map((s) => getCourseBySlugFromDb(s, { includeUnpublished: true }))
+    );
     fromDbList.forEach((fd, i) => {
       if (fd) courseTitles.set(slugs[i], fd.course.title);
     });
@@ -243,9 +261,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ emai
       name: appUser?.name ?? null,
       is_admin: appUser?.is_admin ?? false,
       clerk_id: clerkId ?? null,
-      userMetiers: userMetiers.map((um) => ({ id: um.metier_id, label: um.metier?.label, slug: um.metier?.slug })),
+      userMetiers: userMetiers.map((um) => ({
+        id: um.metier_id,
+        label: um.metier?.label,
+        slug: um.metier?.slug,
+      })),
     };
-    // Enrichir les titres des modules (quiz) pour les formations venant de la DB
     for (let i = 0; i < slugs.length; i++) {
       const fd = fromDbList[i];
       if (!fd) continue;
@@ -290,26 +311,32 @@ export async function PATCH(
   }
 
   try {
-    const { data: appUser } = await supabaseAdmin
-      .from("app_users")
-      .select("id, clerk_id")
-      .ilike("email", decodedEmail)
-      .maybeSingle();
+    const { data: appUser } = await dbMaybeSingle(() =>
+      sql<{ id: string; clerk_id: string | null }[]>`
+        SELECT id, clerk_id
+        FROM app_users
+        WHERE email ILIKE ${decodedEmail}
+        LIMIT 2
+      `
+    );
 
     if (!appUser) {
       return NextResponse.json({ error: "Utilisateur non trouvé dans app_users" }, { status: 404 });
     }
 
     const updates: { name?: string | null; is_admin?: boolean; updated_at: string } = {
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     };
     if (body.name !== undefined) updates.name = body.name;
     if (body.is_admin !== undefined) updates.is_admin = body.is_admin;
 
-    const { error: updateError } = await supabaseAdmin
-      .from("app_users")
-      .update(updates)
-      .eq("id", appUser.id);
+    const updatePayload = updates as Record<string, unknown>;
+    const { error: updateError } = await dbResult(() =>
+      sql`
+        UPDATE app_users SET ${sql(updatePayload, ...Object.keys(updatePayload))}
+        WHERE id = ${appUser.id}
+      `
+    );
 
     if (updateError) {
       console.error(updateError);
@@ -320,7 +347,7 @@ export async function PATCH(
       try {
         const client = await clerkClient();
         await client.users.updateUserMetadata(appUser.clerk_id, {
-          publicMetadata: { isAdmin: body.is_admin }
+          publicMetadata: { isAdmin: body.is_admin },
         });
       } catch (clerkErr) {
         console.error("Clerk metadata update failed:", clerkErr);
@@ -351,10 +378,12 @@ export async function DELETE(
   const decodedEmail = decodeURIComponent(email);
 
   try {
-    const { error } = await supabaseAdmin
-      .from("app_users")
-      .delete()
-      .ilike("email", decodedEmail);
+    const { error } = await dbResult(() =>
+      sql`
+        DELETE FROM app_users
+        WHERE email ILIKE ${decodedEmail}
+      `
+    );
 
     if (error) {
       console.error(error);
@@ -366,4 +395,3 @@ export async function DELETE(
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 });
   }
 }
-

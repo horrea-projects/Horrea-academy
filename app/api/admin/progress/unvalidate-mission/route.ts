@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import sql, { dbResult, dbMaybeSingle } from "@/lib/db";
 
 /** POST : annuler la validation d'une mission (repasser en attente). Réservé admin ou auteur de la formation. */
 export async function POST(req: NextRequest) {
@@ -25,26 +25,29 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { data: course } = await supabaseAdmin
-    .from("courses")
-    .select("created_by")
-    .eq("slug", courseSlug)
-    .maybeSingle();
+  const { data: course } = await dbMaybeSingle(async () =>
+    await sql<{ created_by: string | null }[]>`
+      SELECT created_by FROM courses WHERE slug = ${courseSlug} LIMIT 2
+    `
+  );
 
-  const createdBy = (course as { created_by?: string | null } | null)?.created_by ?? null;
+  const createdBy = course?.created_by ?? null;
   if (!isAdmin && user.id !== createdBy) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 403 });
   }
 
-  const { data, error } = await supabaseAdmin
-    .from("user_progress")
-    .update({ status: "pending_validation" })
-    .eq("email", userEmail)
-    .eq("course_slug", courseSlug)
-    .eq("module_id", missionId)
-    .eq("type", "mission")
-    .eq("status", "completed")
-    .select("id");
+  const { data, error } = await dbResult(async () =>
+    await sql<{ id: string }[]>`
+      UPDATE user_progress
+      SET status = ${"pending_validation"}
+      WHERE email = ${userEmail}
+        AND course_slug = ${courseSlug}
+        AND module_id = ${missionId}
+        AND type = ${"mission"}
+        AND status = ${"completed"}
+      RETURNING id
+    `
+  );
 
   if (error) {
     console.error("unvalidate-mission", error);

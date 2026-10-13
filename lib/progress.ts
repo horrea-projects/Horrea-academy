@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import sql, { dbResult } from "@/lib/db";
 
 export type CourseProgress = {
   completedModuleIds: string[];
@@ -9,29 +9,46 @@ export type CourseProgress = {
   quizScores: Record<string, number>;
 };
 
+type ProgressRow = {
+  module_id: string;
+  type: string | null;
+  score: number | null;
+};
+
+type ProgressStatusRow = ProgressRow & {
+  course_slug: string;
+  status: string;
+};
+
 export async function getProgressForCourse(
   email: string,
   courseSlug: string
 ): Promise<CourseProgress> {
-  const { data: completedData, error: completedError } = await supabaseAdmin
-    .from("user_progress")
-    .select("module_id, type, score")
-    .eq("email", email)
-    .eq("course_slug", courseSlug)
-    .eq("status", "completed");
+  const { data: completedData, error: completedError } = await dbResult(() =>
+    sql<ProgressRow[]>`
+      SELECT module_id, type, score
+      FROM user_progress
+      WHERE email = ${email}
+        AND course_slug = ${courseSlug}
+        AND status = 'completed'
+    `
+  );
 
   if (completedError) {
     console.error("getProgressForCourse", completedError);
     return { completedModuleIds: [], completedMissionIds: [], pendingMissionIds: [], quizScores: {} };
   }
 
-  const { data: pendingData } = await supabaseAdmin
-    .from("user_progress")
-    .select("module_id")
-    .eq("email", email)
-    .eq("course_slug", courseSlug)
-    .eq("type", "mission")
-    .eq("status", "pending_validation");
+  const { data: pendingData } = await dbResult(() =>
+    sql<{ module_id: string }[]>`
+      SELECT module_id
+      FROM user_progress
+      WHERE email = ${email}
+        AND course_slug = ${courseSlug}
+        AND type = 'mission'
+        AND status = 'pending_validation'
+    `
+  );
 
   const rows = completedData ?? [];
   const completedModuleIds = [...new Set(rows.filter((r) => r.type === "module").map((r) => r.module_id))];
@@ -59,26 +76,32 @@ export async function getCourseProgressStatsForAdmin(
   moduleIds: string[],
   missionIds: string[] = []
 ): Promise<CourseProgressStats> {
-  const { data: moduleData, error: moduleError } = await supabaseAdmin
-    .from("user_progress")
-    .select("email, module_id")
-    .eq("course_slug", courseSlug)
-    .eq("type", "module")
-    .eq("status", "completed");
+  const { data: moduleData, error: moduleError } = await dbResult(() =>
+    sql<{ email: string; module_id: string }[]>`
+      SELECT email, module_id
+      FROM user_progress
+      WHERE course_slug = ${courseSlug}
+        AND type = 'module'
+        AND status = 'completed'
+    `
+  );
 
-  const { data: missionData } = await supabaseAdmin
-    .from("user_progress")
-    .select("email, module_id")
-    .eq("course_slug", courseSlug)
-    .eq("type", "mission")
-    .eq("status", "completed");
+  const { data: missionData } = await dbResult(() =>
+    sql<{ email: string; module_id: string }[]>`
+      SELECT email, module_id
+      FROM user_progress
+      WHERE course_slug = ${courseSlug}
+        AND type = 'mission'
+        AND status = 'completed'
+    `
+  );
 
   if (moduleError || !moduleData) {
     return { completedBy: [], perModule: moduleIds.map((moduleId) => ({ moduleId, emails: [] })) };
   }
 
-  const moduleRows = moduleData as { email: string; module_id: string }[];
-  const missionRows = (missionData ?? []) as { email: string; module_id: string }[];
+  const moduleRows = moduleData;
+  const missionRows = missionData ?? [];
   const perModule = new Map<string, Set<string>>();
   for (const id of moduleIds) perModule.set(id, new Set());
   const modulesByEmail = new Map<string, Set<string>>();
@@ -121,16 +144,19 @@ export async function getCourseProgressStatsForAdmin(
 
 /** Progression de l'utilisateur pour toutes les formations (catalogue). */
 export async function getProgressForAllCourses(email: string): Promise<Record<string, CourseProgress>> {
-  const { data, error } = await supabaseAdmin
-    .from("user_progress")
-    .select("course_slug, module_id, type, score, status")
-    .eq("email", email);
+  const { data, error } = await dbResult(() =>
+    sql<ProgressStatusRow[]>`
+      SELECT course_slug, module_id, type, score, status
+      FROM user_progress
+      WHERE email = ${email}
+    `
+  );
 
   if (error || !data) return {};
 
   const byCourse = new Map<string, { completedModuleIds: Set<string>; completedMissionIds: Set<string>; pendingMissionIds: Set<string>; quizScores: Map<string, number> }>();
 
-  for (const row of data as { course_slug: string; module_id: string; type: string; score: number | null; status: string }[]) {
+  for (const row of data) {
     const slug = row.course_slug;
     if (!slug) continue;
     if (!byCourse.has(slug)) {
@@ -175,15 +201,24 @@ export type PendingMissionSubmission = {
   date: string;
 };
 
+function toIsoDate(value: Date | string | null | undefined): string {
+  if (value == null) return new Date().toISOString();
+  if (value instanceof Date) return value.toISOString();
+  return value;
+}
+
 /** Missions en attente de validation pour une formation (admin / auteur). */
 export async function getPendingMissionSubmissions(courseSlug: string): Promise<PendingMissionSubmission[]> {
-  const { data, error } = await supabaseAdmin
-    .from("user_progress")
-    .select("email, module_id, date")
-    .eq("course_slug", courseSlug)
-    .eq("type", "mission")
-    .eq("status", "pending_validation")
-    .order("date", { ascending: false });
+  const { data, error } = await dbResult(() =>
+    sql<{ email: string; module_id: string; date: Date | string | null }[]>`
+      SELECT email, module_id, date
+      FROM user_progress
+      WHERE course_slug = ${courseSlug}
+        AND type = 'mission'
+        AND status = 'pending_validation'
+      ORDER BY date DESC
+    `
+  );
 
   if (error) {
     console.error("getPendingMissionSubmissions", error);
@@ -192,19 +227,22 @@ export async function getPendingMissionSubmissions(courseSlug: string): Promise<
   return (data ?? []).map((r) => ({
     email: r.email ?? "",
     missionId: r.module_id ?? "",
-    date: r.date ?? new Date().toISOString(),
+    date: toIsoDate(r.date),
   }));
 }
 
 /** Missions déjà validées pour une formation (admin / auteur). */
 export async function getValidatedMissionSubmissions(courseSlug: string): Promise<PendingMissionSubmission[]> {
-  const { data, error } = await supabaseAdmin
-    .from("user_progress")
-    .select("email, module_id, date")
-    .eq("course_slug", courseSlug)
-    .eq("type", "mission")
-    .eq("status", "completed")
-    .order("date", { ascending: false });
+  const { data, error } = await dbResult(() =>
+    sql<{ email: string; module_id: string; date: Date | string | null }[]>`
+      SELECT email, module_id, date
+      FROM user_progress
+      WHERE course_slug = ${courseSlug}
+        AND type = 'mission'
+        AND status = 'completed'
+      ORDER BY date DESC
+    `
+  );
 
   if (error) {
     console.error("getValidatedMissionSubmissions", error);
@@ -213,6 +251,6 @@ export async function getValidatedMissionSubmissions(courseSlug: string): Promis
   return (data ?? []).map((r) => ({
     email: r.email ?? "",
     missionId: r.module_id ?? "",
-    date: r.date ?? new Date().toISOString(),
+    date: toIsoDate(r.date),
   }));
 }

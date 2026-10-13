@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import sql, { dbResult } from "@/lib/db";
 
 /** POST : remettre un module à zéro pour que l'apprenant puisse le refaire. */
 export async function POST(req: NextRequest) {
@@ -24,13 +24,16 @@ export async function POST(req: NextRequest) {
   }
 
   // Supprime l'état du module + les tentatives quiz liées à ce module.
-  const { error } = await supabaseAdmin
-    .from("user_progress")
-    .delete()
-    .eq("email", email)
-    .eq("course_slug", courseSlug)
-    .eq("module_id", moduleId)
-    .in("type", ["module", "quiz"]);
+  const { error } = await dbResult(async () => {
+    await sql`
+      DELETE FROM user_progress
+      WHERE email = ${email}
+        AND course_slug = ${courseSlug}
+        AND module_id = ${moduleId}
+        AND type = ANY(${["module", "quiz"]})
+    `;
+    return true;
+  });
 
   if (error) {
     console.error("reset-module", error);
@@ -39,4 +42,3 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ ok: true });
 }
-

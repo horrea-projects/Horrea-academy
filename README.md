@@ -6,14 +6,16 @@ Plateforme interne de formation pour les équipes Horrea. Parcours pratiques aut
 
 - **Frontend** : Next.js 16, React 19, Tailwind CSS, shadcn/ui
 - **Auth** : Clerk (connexion Google SSO)
-- **Contenu** : import/export JSON + gestion via interface d'administration (persistance Supabase)
+- **Base de données** : Postgres (postgres.js, `DATABASE_URL`)
+- **Contenu** : import/export JSON + gestion via interface d'administration
 - **Vidéos** : Google Drive (embed iframe)
 - **Quiz & progression** : Google Sheets via Netlify Functions (compte de service)
-- **Hébergement** : Coolify (VPS Hostinger, proxy Traefik)
+- **Hébergement** : Coolify (VPS Hostinger, proxy Traefik) — image Docker standalone
 
 ## Prérequis
 
 - Node.js 20+
+- Postgres 14+ (local ou distant)
 - Compte [Clerk](https://clerk.com) (Google SSO)
 - Optionnel : projet Google Cloud + compte de service pour Google Sheets (progression et quiz)
 
@@ -28,7 +30,7 @@ Plateforme interne de formation pour les équipes Horrea. Parcours pratiques aut
 
 2. **Variables d’environnement**
 
-   Copier `.env.example` vers `.env.local` et renseigner au minimum les clés Clerk :
+   Copier `.env.example` vers `.env.local` et renseigner au minimum Clerk + Postgres :
 
    ```bash
    cp .env.example .env.local
@@ -37,9 +39,20 @@ Plateforme interne de formation pour les équipes Horrea. Parcours pratiques aut
    Dans `.env.local` :
 
    - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` et `CLERK_SECRET_KEY` (depuis le [dashboard Clerk](https://dashboard.clerk.com))
+   - `DATABASE_URL` — URL Postgres (ex. `postgres://postgres:postgres@localhost:5432/horrea`)
    - Pour activer Google Sheets en local : `GOOGLE_SERVICE_ACCOUNT_JSON` (JSON du compte de service en une ligne) et éventuellement `PROGRESSION_SHEET_ID`, `QUIZ_RESULTS_SHEET_ID`
 
-3. **Lancer l’app**
+3. **Schéma de base**
+
+   Sur une base vide :
+
+   ```bash
+   DATABASE_URL=postgres://postgres:postgres@localhost:5432/horrea npm run db:migrate
+   ```
+
+   Pour restaurer des données de production : `pg_dump` / `pg_restore` du schéma `public` (noms de tables/colonnes inchangés).
+
+4. **Lancer l’app**
 
    ```bash
    npm run dev
@@ -51,17 +64,17 @@ Plateforme interne de formation pour les équipes Horrea. Parcours pratiques aut
 
 1. **Connecter le depot**
    - Dans Coolify : creer une nouvelle application depuis le repository GitHub.
-   - Build pack : Nixpacks (Node.js).
+   - Build pack : **Dockerfile** (sortie Next.js `standalone`).
    - Port interne de l'application : `3000`.
 
 2. **Variables d'environnement (Coolify)**
    Renseigner au minimum :
    - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
    - `CLERK_SECRET_KEY`
+   - `DATABASE_URL`
    - `GOOGLE_SERVICE_ACCOUNT_JSON` (si quiz/progression Google Sheets)
    - `PROGRESSION_SHEET_ID` (si active)
    - `QUIZ_RESULTS_SHEET_ID` (si active)
-   - `NIXPACKS_NODE_VERSION=22`
 
 3. **Domaine**
    - Ajouter le FQDN dans le champ `Domains` de l'application.
@@ -126,4 +139,5 @@ Plateforme interne de formation pour les équipes Horrea. Parcours pratiques aut
 - `npm run build` : build de production
 - `npm run start` : serveur de production (après build)
 - `npm run lint` : lint
+- `npm run db:migrate` : applique `db/schema.sql` (idempotent) sur `DATABASE_URL`
 - `node scripts/import-formation.js <fichier-formation-complete.json>` : importe une formation à partir d’un JSON unique (voir [docs/CREATION_FORMATIONS.md](docs/CREATION_FORMATIONS.md))

@@ -6,14 +6,19 @@ import { getCoursesList, getCategories } from "@/lib/content";
 import { getPublishedCoursesFromDb, getCategoriesFromDb } from "@/lib/courses-catalogue";
 import { getMetiersWithFormations, getUserMetiers } from "@/lib/metiers";
 import { getProgressForAllCourses } from "@/lib/progress";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import sql, { dbMaybeSingle } from "@/lib/db";
 
-async function getAppUserByEmail(email: string): Promise<{ clerk_id: string | null; name: string | null } | null> {
-  const { data, error } = await supabaseAdmin
-    .from("app_users")
-    .select("clerk_id, name")
-    .ilike("email", email)
-    .maybeSingle();
+async function getAppUserByEmail(
+  email: string
+): Promise<{ clerk_id: string | null; name: string | null } | null> {
+  const { data, error } = await dbMaybeSingle(() =>
+    sql<{ clerk_id: string | null; name: string | null }[]>`
+      SELECT clerk_id, name
+      FROM app_users
+      WHERE email ILIKE ${email}
+      LIMIT 2
+    `
+  );
   if (error || !data) return null;
   return data as { clerk_id: string | null; name: string | null };
 }
@@ -51,8 +56,17 @@ export async function GET(
   });
 
   const fileCats = fileCategories.map((c) => ({ ...c, parent_id: null as string | null }));
-  const dbCats = dbCategories.map((c) => ({ id: c.id, slug: c.slug, label: c.label, icon: c.icon, parent_id: c.parent_id ?? null }));
-  const bySlugCat = new Map<string, { id: string; slug: string; label: string; icon: string; parent_id: string | null }>();
+  const dbCats = dbCategories.map((c) => ({
+    id: c.id,
+    slug: c.slug,
+    label: c.label,
+    icon: c.icon,
+    parent_id: c.parent_id ?? null,
+  }));
+  const bySlugCat = new Map<
+    string,
+    { id: string; slug: string; label: string; icon: string; parent_id: string | null }
+  >();
   for (const c of fileCats) bySlugCat.set(c.slug, c);
   for (const c of dbCats) bySlugCat.set(c.slug, c);
   const allCategoriesForTree = [...bySlugCat.values()];
