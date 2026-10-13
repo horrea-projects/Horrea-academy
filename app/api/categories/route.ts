@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import sql, { dbResult, dbSingle, dbMaybeSingle, isUndefinedColumnError } from "@/lib/db";
+
+type CategoryRow = { id: string; slug: string; label: string; icon: string };
 
 /** Liste des catégories approuvées (utilisateur connecté). Utilisé par la page « Proposer une formation ». */
 export async function GET() {
@@ -10,18 +12,33 @@ export async function GET() {
     return new NextResponse("Non authentifié", { status: 401 });
   }
 
-  const selectCols = "id, slug, label, icon";
-  let result = await supabaseAdmin
-    .from("categories")
-    .select(selectCols)
-    .eq("status", "published")
-    .order("label");
+  let result = await dbResult(async () =>
+    await sql<CategoryRow[]>`
+      SELECT id, slug, label, icon
+      FROM categories
+      WHERE status = ${"published"}
+      ORDER BY label ASC
+    `
+  );
 
-  if (result.error?.code === "42703") {
-    result = await supabaseAdmin.from("categories").select(selectCols).eq("approved", true).order("label");
+  if (isUndefinedColumnError(result.error)) {
+    result = await dbResult(async () =>
+      await sql<CategoryRow[]>`
+        SELECT id, slug, label, icon
+        FROM categories
+        WHERE approved = true
+        ORDER BY label ASC
+      `
+    );
   }
-  if (result.error?.code === "42703") {
-    result = await supabaseAdmin.from("categories").select(selectCols).order("label");
+  if (isUndefinedColumnError(result.error)) {
+    result = await dbResult(async () =>
+      await sql<CategoryRow[]>`
+        SELECT id, slug, label, icon
+        FROM categories
+        ORDER BY label ASC
+      `
+    );
   }
   if (result.error) {
     console.error(result.error);
@@ -51,32 +68,55 @@ export async function POST(req: NextRequest) {
   const slug = (body.slug ?? label).trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") || "nouvelle-categorie";
   const icon = (body.icon ?? "").trim() || "book";
 
-  const { data: existing } = await supabaseAdmin
-    .from("categories")
-    .select("id")
-    .eq("slug", slug)
-    .maybeSingle();
+  const { data: existing } = await dbMaybeSingle(async () =>
+    await sql<{ id: string }[]>`
+      SELECT id FROM categories WHERE slug = ${slug} LIMIT 2
+    `
+  );
   if (existing) {
     return NextResponse.json({ error: "Une catégorie avec ce slug existe déjà." }, { status: 400 });
   }
 
-  const insertPayload: Record<string, unknown> = {
-    slug,
-    label: label || slug,
-    icon,
-    status: "pending",
-    created_by: user.id,
-  };
+  let result = await dbSingle(async () =>
+    await sql<CategoryRow[]>`
+      INSERT INTO categories ${sql(
+        {
+          slug,
+          label: label || slug,
+          icon,
+          status: "pending",
+          created_by: user.id,
+        },
+        "slug",
+        "label",
+        "icon",
+        "status",
+        "created_by"
+      )}
+      RETURNING id, slug, label, icon
+    `
+  );
 
-  let result = await supabaseAdmin
-    .from("categories")
-    .insert(insertPayload)
-    .select("id, slug, label, icon")
-    .single();
-
-  if (result.error?.code === "42703") {
-    const fallback = { slug, label: label || slug, icon, approved: false, created_by: user.id } as Record<string, unknown>;
-    result = await supabaseAdmin.from("categories").insert(fallback).select("id, slug, label, icon").single();
+  if (isUndefinedColumnError(result.error)) {
+    result = await dbSingle(async () =>
+      await sql<CategoryRow[]>`
+        INSERT INTO categories ${sql(
+          {
+            slug,
+            label: label || slug,
+            icon,
+            approved: false,
+            created_by: user.id,
+          },
+          "slug",
+          "label",
+          "icon",
+          "approved",
+          "created_by"
+        )}
+        RETURNING id, slug, label, icon
+      `
+    );
   }
 
   if (result.error) {

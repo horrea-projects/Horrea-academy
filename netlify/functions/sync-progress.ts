@@ -1,11 +1,5 @@
 import type { Handler, HandlerEvent } from "@netlify/functions";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, serviceKey, {
-  auth: { persistSession: false },
-});
+import postgres from "postgres";
 
 export const handler: Handler = async (event: HandlerEvent) => {
   if (event.httpMethod !== "POST") {
@@ -27,24 +21,37 @@ export const handler: Handler = async (event: HandlerEvent) => {
     };
   }
 
-  try {
-    const { error } = await supabase.from("user_progress").insert({
-      email,
-      course_slug: courseSlug,
-      module_id: moduleId,
-      status,
-      score: score ?? null,
-      type: type ?? "module",
-      date: new Date().toISOString(),
-    });
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: "DATABASE_URL manquant" }),
+    };
+  }
 
-    if (error) {
-      console.error("Erreur insertion user_progress", error);
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ error: "Erreur lors de l’écriture dans la base de données" }),
-      };
-    }
+  const sql = postgres(databaseUrl, { max: 1 });
+
+  try {
+    await sql`
+      INSERT INTO user_progress ${sql(
+        {
+          email,
+          course_slug: courseSlug,
+          module_id: moduleId,
+          status,
+          score: score ?? null,
+          type: type ?? "module",
+          date: new Date().toISOString(),
+        },
+        "email",
+        "course_slug",
+        "module_id",
+        "status",
+        "score",
+        "type",
+        "date"
+      )}
+    `;
 
     return {
       statusCode: 200,
@@ -52,10 +59,12 @@ export const handler: Handler = async (event: HandlerEvent) => {
       body: JSON.stringify({ ok: true }),
     };
   } catch (err) {
-    console.error(err);
+    console.error("Erreur insertion user_progress", err);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: "Erreur inattendue lors de l’enregistrement de la progression" }),
+      body: JSON.stringify({ error: "Erreur lors de l’écriture dans la base de données" }),
     };
+  } finally {
+    await sql.end();
   }
 };

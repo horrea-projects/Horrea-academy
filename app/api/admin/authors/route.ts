@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import sql, { dbResult } from "@/lib/db";
 
 /** Liste minimale des utilisateurs (clerk_id, email) pour les sélecteurs d’auteur. Admin uniquement. */
 export async function GET() {
@@ -8,16 +8,19 @@ export async function GET() {
   if (!user?.publicMetadata?.isAdmin) {
     return new NextResponse("Forbidden", { status: 403 });
   }
-  const { data, error } = await supabaseAdmin
-    .from("app_users")
-    .select("clerk_id, email, name")
-    .order("email");
+  const { data, error } = await dbResult(async () =>
+    await sql<{ clerk_id: string; email: string; name: string | null }[]>`
+      SELECT clerk_id, email, name
+      FROM app_users
+      ORDER BY email ASC
+    `
+  );
   if (error) {
     console.error(error);
     return NextResponse.json({ error: "Erreur lecture utilisateurs" }, { status: 500 });
   }
   return NextResponse.json({
-    users: (data ?? []).map((u: { clerk_id: string; email: string; name?: string | null }) => ({
+    users: (data ?? []).map((u) => ({
       clerk_id: u.clerk_id,
       email: u.email,
       name: u.name ?? undefined,

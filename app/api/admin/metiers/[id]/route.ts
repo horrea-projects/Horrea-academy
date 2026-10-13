@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
 import { getMetierById } from "@/lib/metiers";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import sql, { dbResult } from "@/lib/db";
 
 async function requireAdmin() {
   const user = await currentUser();
@@ -45,30 +45,60 @@ export async function PATCH(
   }
 
   const updates: Record<string, unknown> = {};
-  if (body.slug !== undefined) updates.slug = (body.slug ?? "").trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") || undefined;
+  if (body.slug !== undefined) {
+    updates.slug =
+      (body.slug ?? "").trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") ||
+      undefined;
+  }
   if (body.label !== undefined) updates.label = (body.label ?? "").trim() || undefined;
   if (body.description !== undefined) updates.description = (body.description ?? "").trim() || null;
   updates.updated_at = new Date().toISOString();
 
+  for (const k of Object.keys(updates)) {
+    if (updates[k] === undefined) delete updates[k];
+  }
+
+  // updated_at is always set; only run UPDATE when there is at least one other field
   if (Object.keys(updates).length > 1) {
-    const { error: updateError } = await supabaseAdmin.from("metiers").update(updates).eq("id", id);
+    const keys = Object.keys(updates);
+    const { error: updateError } = await dbResult(() =>
+      sql`
+        UPDATE metiers SET ${sql(updates, ...keys)}
+        WHERE id = ${id}
+      `
+    );
     if (updateError) {
-      if (updateError.code === "23505") return NextResponse.json({ error: "Ce slug est déjà utilisé." }, { status: 400 });
+      if (updateError.code === "23505") {
+        return NextResponse.json({ error: "Ce slug est déjà utilisé." }, { status: 400 });
+      }
       console.error(updateError);
       return NextResponse.json({ error: updateError.message }, { status: 500 });
     }
   }
 
   if (body.course_slugs !== undefined) {
-    const course_slugs = Array.isArray(body.course_slugs) ? body.course_slugs.filter((s) => typeof s === "string" && s.trim()) : [];
-    const { error: delError } = await supabaseAdmin.from("metier_formations").delete().eq("metier_id", id);
+    const course_slugs = Array.isArray(body.course_slugs)
+      ? body.course_slugs.filter((s) => typeof s === "string" && s.trim())
+      : [];
+    const { error: delError } = await dbResult(() =>
+      sql`
+        DELETE FROM metier_formations
+        WHERE metier_id = ${id}
+      `
+    );
     if (delError) {
       console.error(delError);
       return NextResponse.json({ error: delError.message }, { status: 500 });
     }
     if (course_slugs.length > 0) {
-      const { error: insError } = await supabaseAdmin.from("metier_formations").insert(
-        course_slugs.map((course_slug) => ({ metier_id: id, course_slug }))
+      const { error: insError } = await dbResult(() =>
+        sql`
+          INSERT INTO metier_formations ${sql(
+            course_slugs.map((course_slug) => ({ metier_id: id, course_slug })),
+            "metier_id",
+            "course_slug"
+          )}
+        `
       );
       if (insError) {
         console.error(insError);
@@ -78,7 +108,9 @@ export async function PATCH(
   }
 
   const metier = await getMetierById(id);
-  return NextResponse.json({ metier: metier ?? { id, slug: "", label: "", description: null, course_slugs: [] } });
+  return NextResponse.json({
+    metier: metier ?? { id, slug: "", label: "", description: null, course_slugs: [] },
+  });
 }
 
 export async function DELETE(
@@ -92,7 +124,12 @@ export async function DELETE(
   const { id } = await params;
   if (!id) return NextResponse.json({ error: "ID manquant" }, { status: 400 });
 
-  const { error } = await supabaseAdmin.from("metiers").delete().eq("id", id);
+  const { error } = await dbResult(() =>
+    sql`
+      DELETE FROM metiers
+      WHERE id = ${id}
+    `
+  );
   if (error) {
     if (error.code === "23503") {
       return NextResponse.json(

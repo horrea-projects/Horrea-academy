@@ -270,7 +270,7 @@ export function ImportGuideSheet({ proposeMode = false, triggerLabel }: ImportGu
     const isNewCategory = categoryChoice === "new";
     zip.file(
       "INSTRUCTIONS.txt",
-      `Formation : ${course.title} (${slug})\n\nAvec la plateforme (Supabase) : la formation peut être proposée directement via « Proposer cette formation » ; un admin la publie depuis Administration → Formations.\n\nImport manuel (sans base) :\n1. Extraire les dossiers content/courses, content/modules, content/missions dans le dossier content/ du projet.\n2. Ajouter l'entrée de ADD_TO_INDEX.json au tableau "courses" dans content/courses/index.json.\n3. ${isNewCategory ? "Ajouter la catégorie de ADD_TO_CATEGORY.json dans content/courses/categories.json." : "Catégorie existante : rien à faire pour les catégories."}`
+      `Formation : ${course.title} (${slug})\n\nAvec la plateforme (Postgres) : la formation peut être proposée directement via « Proposer cette formation » ; un admin la publie depuis Administration → Formations.\n\nImport manuel (sans base) :\n1. Extraire les dossiers content/courses, content/modules, content/missions dans le dossier content/ du projet.\n2. Ajouter l'entrée de ADD_TO_INDEX.json au tableau "courses" dans content/courses/index.json.\n3. ${isNewCategory ? "Ajouter la catégorie de ADD_TO_CATEGORY.json dans content/courses/categories.json." : "Catégorie existante : rien à faire pour les catégories."}`
     );
 
     if (isNewCategory && newCategoryName.trim()) {

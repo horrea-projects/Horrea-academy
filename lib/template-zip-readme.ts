@@ -65,7 +65,7 @@ Pour l’import : utilisez **formation-complete.example.json** pour un test, ou 
 3. Sur la plateforme : **Proposer une formation** → guide d’import → **Déposer un fichier** → sélectionnez votre ZIP.
 4. Choisissez une **catégorie** (existante ou nouvelle).
 5. **« Proposer cette formation »** : enregistrement en base, statut « en attente ». Un admin publiera la formation depuis l’administration.
-6. **« Préparer l’import »** : téléchargement d’un ZIP avec la structure \`content/\` et \`ADD_TO_INDEX.json\` pour intégration manuelle au projet (si vous n’utilisez pas la base Supabase).
+6. **« Préparer l’import »** : téléchargement d’un ZIP avec la structure \`content/\` et \`ADD_TO_INDEX.json\` pour intégration manuelle au projet (si vous n’utilisez pas la base Postgres).
 
 ---
 
@@ -79,7 +79,7 @@ Le ZIP téléchargé contient :
 - \`ADD_TO_INDEX.json\` — Entrée pour \`content/courses/index.json\` (si import manuel).
 - \`INSTRUCTIONS.txt\` — Rappel des étapes.
 
-**Avec la base de données (Supabase)** : privilégiez **« Proposer cette formation »** plutôt que « Préparer l’import ». La formation est alors créée directement en base ; un administrateur la met en ligne (statut Publié) depuis **Administration → Formations**.
+**Avec la base de données (Postgres)** : privilégiez **« Proposer cette formation »** plutôt que « Préparer l’import ». La formation est alors créée directement en base ; un administrateur la met en ligne (statut Publié) depuis **Administration → Formations**.
 
 ---
 

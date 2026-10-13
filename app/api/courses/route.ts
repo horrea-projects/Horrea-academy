@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import sql, { dbSingle, dbResult } from "@/lib/db";
 
 /** Créer une formation en proposition (en attente). Utilisateur connecté, published forcé à false. */
 export async function POST(req: NextRequest) {
@@ -58,25 +58,41 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { data: course, error: courseError } = await supabaseAdmin
-      .from("courses")
-      .insert({
-        slug: slug.trim(),
-        title: title.trim(),
-        description,
-        duration,
-        category_id: category_id || null,
-        published: false,
-        created_by: user.id,
-        onboarding_title: onboarding_title?.trim() || null,
-        onboarding_content: onboarding_content?.trim() || null,
-        onboarding_presentation_embed_url: onboarding_presentation_embed_url?.trim() || null,
-        final_quiz_sheet_id: final_quiz_sheet_id?.trim() || null,
-        quiz_spreadsheet_id: quiz_spreadsheet_id?.trim() || null,
-        final_quiz_sheet_name: final_quiz_sheet_name?.trim() || null,
-      })
-      .select("id, slug")
-      .single();
+    const { data: course, error: courseError } = await dbSingle(async () =>
+      await sql<{ id: string; slug: string }[]>`
+        INSERT INTO courses ${sql(
+          {
+            slug: slug.trim(),
+            title: title.trim(),
+            description,
+            duration,
+            category_id: category_id || null,
+            published: false,
+            created_by: user.id,
+            onboarding_title: onboarding_title?.trim() || null,
+            onboarding_content: onboarding_content?.trim() || null,
+            onboarding_presentation_embed_url: onboarding_presentation_embed_url?.trim() || null,
+            final_quiz_sheet_id: final_quiz_sheet_id?.trim() || null,
+            quiz_spreadsheet_id: quiz_spreadsheet_id?.trim() || null,
+            final_quiz_sheet_name: final_quiz_sheet_name?.trim() || null,
+          },
+          "slug",
+          "title",
+          "description",
+          "duration",
+          "category_id",
+          "published",
+          "created_by",
+          "onboarding_title",
+          "onboarding_content",
+          "onboarding_presentation_embed_url",
+          "final_quiz_sheet_id",
+          "quiz_spreadsheet_id",
+          "final_quiz_sheet_name"
+        )}
+        RETURNING id, slug
+      `
+    );
 
     if (courseError || !course) {
       console.error(courseError);
@@ -99,7 +115,27 @@ export async function POST(req: NextRequest) {
         content: m.content ?? null,
         position: m.position
       }));
-      const { error: modErr } = await supabaseAdmin.from("course_modules").insert(rows);
+      const { error: modErr } = await dbResult(async () => {
+        await sql`
+          INSERT INTO course_modules ${sql(
+            rows,
+            "course_id",
+            "module_slug",
+            "title",
+            "description",
+            "duration",
+            "video_embed_url",
+            "document_embed_url",
+            "presentation_embed_url",
+            "quiz_sheet_id",
+            "quiz_sheet_name",
+            "mission_id_slug",
+            "content",
+            "position"
+          )}
+        `;
+        return null;
+      });
       if (modErr) console.error(modErr);
     }
 
@@ -113,11 +149,25 @@ export async function POST(req: NextRequest) {
         instructions: m.instructions ?? [],
         deliverable: m.deliverable ?? ""
       }));
-      const { error: missErr } = await supabaseAdmin.from("course_missions").insert(rows);
+      const { error: missErr } = await dbResult(async () => {
+        await sql`
+          INSERT INTO course_missions ${sql(
+            rows,
+            "course_id",
+            "mission_slug",
+            "title",
+            "context",
+            "objective",
+            "instructions",
+            "deliverable"
+          )}
+        `;
+        return null;
+      });
       if (missErr) console.error(missErr);
     }
 
-    return NextResponse.json({ id: course.id, slug: (course as { slug?: string }).slug ?? slug.trim(), ok: true });
+    return NextResponse.json({ id: course.id, slug: course.slug ?? slug.trim(), ok: true });
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 });

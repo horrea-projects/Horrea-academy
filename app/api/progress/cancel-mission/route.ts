@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import sql, { dbResult } from "@/lib/db";
 
 /** POST : annuler l'envoi d'une mission (supprime la ligne en attente). L'apprenant peut ensuite refaire la mission. */
 export async function POST(req: NextRequest) {
@@ -25,14 +25,17 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { error } = await supabaseAdmin
-    .from("user_progress")
-    .delete()
-    .eq("email", email)
-    .eq("course_slug", courseSlug)
-    .eq("module_id", missionId)
-    .eq("type", "mission")
-    .eq("status", "pending_validation");
+  const { error } = await dbResult(async () => {
+    await sql`
+      DELETE FROM user_progress
+      WHERE email = ${email}
+        AND course_slug = ${courseSlug}
+        AND module_id = ${missionId}
+        AND type = ${"mission"}
+        AND status = ${"pending_validation"}
+    `;
+    return true;
+  });
 
   if (error) {
     console.error("cancel-mission", error);

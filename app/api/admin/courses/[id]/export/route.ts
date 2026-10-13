@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import sql, { dbResult, dbSingle, isUndefinedColumnError } from "@/lib/db";
 
 async function requireAdmin() {
   const user = await currentUser();
@@ -66,18 +66,31 @@ export async function GET(
     return NextResponse.json({ error: "ID manquant" }, { status: 400 });
   }
 
-  let courseResult = await supabaseAdmin
-    .from("courses")
-    .select("id, slug, title, description, duration, category_id, onboarding_title, onboarding_content, onboarding_presentation_embed_url, quiz_spreadsheet_id, final_quiz_sheet_id, final_quiz_sheet_name, final_quiz_min_score, categories(slug)")
-    .eq("id", id)
-    .single();
+  let courseResult = await dbSingle(async () =>
+    await sql<Record<string, unknown>[]>`
+      SELECT c.id, c.slug, c.title, c.description, c.duration, c.category_id,
+        c.onboarding_title, c.onboarding_content, c.onboarding_presentation_embed_url,
+        c.quiz_spreadsheet_id, c.final_quiz_sheet_id, c.final_quiz_sheet_name, c.final_quiz_min_score,
+        CASE WHEN cat.id IS NULL THEN NULL ELSE json_build_object('slug', cat.slug) END AS categories
+      FROM courses c
+      LEFT JOIN categories cat ON cat.id = c.category_id
+      WHERE c.id = ${id}
+      LIMIT 2
+    `
+  );
 
-  if (courseResult.error?.code === "42703" || courseResult.error?.message?.includes("schema cache")) {
-    courseResult = await supabaseAdmin
-      .from("courses")
-      .select("id, slug, title, description, duration, category_id, onboarding_title, onboarding_content, quiz_spreadsheet_id, categories(slug)")
-      .eq("id", id)
-      .single();
+  if (isUndefinedColumnError(courseResult.error)) {
+    courseResult = await dbSingle(async () =>
+      await sql<Record<string, unknown>[]>`
+        SELECT c.id, c.slug, c.title, c.description, c.duration, c.category_id,
+          c.onboarding_title, c.onboarding_content, c.quiz_spreadsheet_id,
+          CASE WHEN cat.id IS NULL THEN NULL ELSE json_build_object('slug', cat.slug) END AS categories
+        FROM courses c
+        LEFT JOIN categories cat ON cat.id = c.category_id
+        WHERE c.id = ${id}
+        LIMIT 2
+      `
+    );
   }
 
   const course = courseResult.data;
@@ -108,18 +121,32 @@ export async function GET(
 
   const categorySlug = Array.isArray(c.categories) ? (c.categories[0]?.slug ?? null) : (c.categories?.slug ?? null);
 
-  let modulesRows: { data: unknown; error: { code?: string; message?: string } | null } = await supabaseAdmin
-    .from("course_modules")
-    .select("module_slug, title, description, duration, video_embed_url, document_embed_url, presentation_embed_url, quiz_sheet_id, quiz_sheet_name, mission_id_slug, content, position, min_quiz_score")
-    .eq("course_id", id)
-    .order("position", { ascending: true });
+  let modulesRows = await dbResult(async () =>
+    await sql<Record<string, unknown>[]>`
+      SELECT module_slug, title, description, duration, video_embed_url, document_embed_url,
+        presentation_embed_url, quiz_sheet_id, quiz_sheet_name, mission_id_slug, content, position,
+        min_quiz_score
+      FROM course_modules
+      WHERE course_id = ${id}
+      ORDER BY position ASC
+    `
+  );
 
-  if (modulesRows.error && (modulesRows.error.code === "42703" || modulesRows.error.message?.includes("quiz_sheet_name") || modulesRows.error.message?.includes("min_quiz_score"))) {
-    modulesRows = await supabaseAdmin
-      .from("course_modules")
-      .select("module_slug, title, description, duration, video_embed_url, document_embed_url, presentation_embed_url, quiz_sheet_id, mission_id_slug, content, position")
-      .eq("course_id", id)
-      .order("position", { ascending: true });
+  if (
+    modulesRows.error &&
+    (isUndefinedColumnError(modulesRows.error) ||
+      modulesRows.error.message?.includes("quiz_sheet_name") ||
+      modulesRows.error.message?.includes("min_quiz_score"))
+  ) {
+    modulesRows = await dbResult(async () =>
+      await sql<Record<string, unknown>[]>`
+        SELECT module_slug, title, description, duration, video_embed_url, document_embed_url,
+          presentation_embed_url, quiz_sheet_id, mission_id_slug, content, position
+        FROM course_modules
+        WHERE course_id = ${id}
+        ORDER BY position ASC
+      `
+    );
   }
 
   const modules = (modulesRows.data ?? []) as Array<{
@@ -138,10 +165,20 @@ export async function GET(
     min_quiz_score?: number | null;
   }>;
 
-  const { data: missionsRows } = await supabaseAdmin
-    .from("course_missions")
-    .select("mission_slug, title, context, objective, instructions, deliverable")
-    .eq("course_id", id);
+  const { data: missionsRows } = await dbResult(async () =>
+    await sql<{
+      mission_slug: string;
+      title?: string;
+      context?: string;
+      objective?: string;
+      instructions?: string[];
+      deliverable?: string;
+    }[]>`
+      SELECT mission_slug, title, context, objective, instructions, deliverable
+      FROM course_missions
+      WHERE course_id = ${id}
+    `
+  );
 
   const missions = (missionsRows ?? []) as Array<{
     mission_slug: string;

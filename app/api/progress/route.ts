@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import sql, { dbResult } from "@/lib/db";
 import { getProgressForCourse, getProgressForAllCourses } from "@/lib/progress";
 
 export async function GET(req: NextRequest) {
@@ -47,14 +47,28 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { error } = await supabaseAdmin.from("user_progress").insert({
-    email,
-    course_slug: courseSlug,
-    module_id: moduleId,
-    status,
-    type: type ?? "module",
-    score: score ?? null,
-    date: new Date().toISOString(),
+  const { error } = await dbResult(async () => {
+    await sql`
+      INSERT INTO user_progress ${sql(
+        {
+          email,
+          course_slug: courseSlug,
+          module_id: moduleId,
+          status,
+          type: type ?? "module",
+          score: score ?? null,
+          date: new Date().toISOString(),
+        },
+        "email",
+        "course_slug",
+        "module_id",
+        "status",
+        "type",
+        "score",
+        "date"
+      )}
+    `;
+    return null;
   });
 
   if (error) {
