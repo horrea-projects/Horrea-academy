@@ -2,7 +2,7 @@
 
 import type { CourseListItem, CourseDetail, ModuleData, MissionData } from "@/lib/content";
 import { getCourseBySlug } from "@/lib/content";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import sql, { dbResult, dbMaybeSingle, isUndefinedColumnError } from "@/lib/db";
 
 /** Nombre de modules et de missions pour une formation (fichier ou DB). */
 export async function getCourseTotals(slug: string): Promise<{ totalModules: number; totalMissions: number }> {
@@ -35,89 +35,206 @@ export type CategoryListItem = {
 
 const STATUS_PUBLISHED = "published";
 
-/** Liste des catégories publiées (Supabase) pour le catalogue. Inclut parent_id pour filtrer racines / sous-catégories. */
+type CategoryRow = CategoryListItem & { parent_id?: string | null; approved?: boolean };
+type CategoryDetailRow = CategoryDetail & { status?: string; approved?: boolean };
+
+/** Liste des catégories publiées (Postgres) pour le catalogue. Inclut parent_id pour filtrer racines / sous-catégories. */
 export async function getCategoriesFromDb(): Promise<CategoryListItem[]> {
-  type CategoriesQueryResult = { data: unknown; error: { code?: string; message?: string } | null };
-  let query = supabaseAdmin.from("categories").select("id, slug, label, icon, parent_id").order("label", { ascending: true });
-  let result: CategoriesQueryResult = await query.eq("status", STATUS_PUBLISHED);
-  if (result.error?.code === "42703" || result.error?.message?.includes("parent_id")) {
-    result = await supabaseAdmin.from("categories").select("id, slug, label, icon").order("label", { ascending: true });
-    if (result.error) return [];
-    const withApproved = (result.data ?? []) as Array<{ approved?: boolean } & CategoryListItem>;
-    return withApproved.filter((c) => (c as { approved?: boolean }).approved !== false).map((c) => ({ ...c, parent_id: null }));
+  let result = await dbResult(async () =>
+    await sql<CategoryRow[]>`
+      SELECT id, slug, label, icon, parent_id
+      FROM categories
+      WHERE status = ${STATUS_PUBLISHED}
+      ORDER BY label ASC
+    `
+  );
+
+  // Missing parent_id only: keep the published filter, drop parent_id.
+  if (
+    result.error &&
+    (isUndefinedColumnError(result.error) || result.error.message?.includes("parent_id")) &&
+    result.error.message?.includes("parent_id")
+  ) {
+    result = await dbResult(async () =>
+      await sql<CategoryRow[]>`
+        SELECT id, slug, label, icon
+        FROM categories
+        WHERE status = ${STATUS_PUBLISHED}
+        ORDER BY label ASC
+      `
+    );
+    if (!result.error) {
+      return ((result.data ?? []) as CategoryListItem[]).map((c) => ({ ...c, parent_id: null }));
+    }
   }
+
+  // Missing status (or still failing): fall back to approved = true.
+  if (isUndefinedColumnError(result.error)) {
+    result = await dbResult(async () =>
+      await sql<CategoryRow[]>`
+        SELECT id, slug, label, icon
+        FROM categories
+        WHERE approved = true
+        ORDER BY label ASC
+      `
+    );
+    if (isUndefinedColumnError(result.error)) {
+      result = await dbResult(async () =>
+        await sql<CategoryRow[]>`
+          SELECT id, slug, label, icon
+          FROM categories
+          ORDER BY label ASC
+        `
+      );
+    }
+    if (result.error) return [];
+    return ((result.data ?? []) as CategoryListItem[]).map((c) => ({ ...c, parent_id: null }));
+  }
+
   if (result.error) return [];
   const rows = (result.data ?? []) as Array<CategoryListItem & { parent_id?: string | null }>;
   return rows.map((c) => ({ ...c, parent_id: c.parent_id ?? null }));
 }
 
-/** Catégorie par slug (Supabase). Si includeUnpublished, retourne même brouillon/en attente (prévisualisation admin). */
+/** Catégorie par slug (Postgres). Si includeUnpublished, retourne même brouillon/en attente (prévisualisation admin). */
 export async function getCategoryBySlugFromDb(
   slug: string,
   opts?: { includeUnpublished?: boolean }
 ): Promise<CategoryDetail & { status?: string } | null> {
-  const selectCols = "id, slug, label, icon, onboarding_title, onboarding_content, onboarding_presentation_embed_url, onboarding_quiz_sheet_id, onboarding_quiz_sheet_name, status";
-  let query = supabaseAdmin.from("categories").select(selectCols).eq("slug", slug);
   if (!opts?.includeUnpublished) {
-    const withStatus = await query.eq("status", STATUS_PUBLISHED).maybeSingle();
-    if (withStatus.error?.code === "42703") {
-      const fallback = await supabaseAdmin.from("categories").select("id, slug, label, icon, onboarding_title, onboarding_content, onboarding_presentation_embed_url, onboarding_quiz_sheet_id, onboarding_quiz_sheet_name").eq("slug", slug).eq("approved", true).maybeSingle();
+    const withStatus = await dbMaybeSingle(async () =>
+      await sql<CategoryDetailRow[]>`
+        SELECT id, slug, label, icon, onboarding_title, onboarding_content,
+          onboarding_presentation_embed_url, onboarding_quiz_sheet_id,
+          onboarding_quiz_sheet_name, status
+        FROM categories
+        WHERE slug = ${slug} AND status = ${STATUS_PUBLISHED}
+        LIMIT 2
+      `
+    );
+    if (isUndefinedColumnError(withStatus.error)) {
+      const fallback = await dbMaybeSingle(async () =>
+        await sql<CategoryDetailRow[]>`
+          SELECT id, slug, label, icon, onboarding_title, onboarding_content,
+            onboarding_presentation_embed_url, onboarding_quiz_sheet_id,
+            onboarding_quiz_sheet_name
+          FROM categories
+          WHERE slug = ${slug} AND approved = true
+          LIMIT 2
+        `
+      );
       if (fallback.error || !fallback.data) return null;
-      return { ...(fallback.data as CategoryDetail), status: (fallback.data as { approved?: boolean }).approved ? "published" : "pending" };
+      return {
+        ...(fallback.data as CategoryDetail),
+        status: (fallback.data as { approved?: boolean }).approved ? "published" : "pending",
+      };
     }
     if (withStatus.error || !withStatus.data) return null;
     return withStatus.data as CategoryDetail & { status?: string };
   }
-  let result = await query.maybeSingle();
-  if (result.error?.code === "42703") {
-    result = await supabaseAdmin.from("categories").select("id, slug, label, icon, onboarding_title, onboarding_content, onboarding_presentation_embed_url, onboarding_quiz_sheet_id, onboarding_quiz_sheet_name").eq("slug", slug).maybeSingle();
+
+  let result = await dbMaybeSingle(async () =>
+    await sql<CategoryDetailRow[]>`
+      SELECT id, slug, label, icon, onboarding_title, onboarding_content,
+        onboarding_presentation_embed_url, onboarding_quiz_sheet_id,
+        onboarding_quiz_sheet_name, status
+      FROM categories
+      WHERE slug = ${slug}
+      LIMIT 2
+    `
+  );
+  if (isUndefinedColumnError(result.error)) {
+    result = await dbMaybeSingle(async () =>
+      await sql<CategoryDetailRow[]>`
+        SELECT id, slug, label, icon, onboarding_title, onboarding_content,
+          onboarding_presentation_embed_url, onboarding_quiz_sheet_id,
+          onboarding_quiz_sheet_name
+        FROM categories
+        WHERE slug = ${slug}
+        LIMIT 2
+      `
+    );
   }
   if (result.error || !result.data) return null;
   return result.data as CategoryDetail & { status?: string };
 }
 
+type CourseListRow = {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  duration: string;
+  added_at: string;
+  category_id: string | null;
+  categories?: { slug: string } | Array<{ slug: string }> | null;
+};
+
 /**
- * Liste des formations publiées (Supabase) pour le catalogue.
+ * Liste des formations publiées (Postgres) pour le catalogue.
  * Fusionnée côté page avec les formations issues des fichiers (content/).
  * @param opts.categorySlug - filtrer par slug de catégorie
  */
 export async function getPublishedCoursesFromDb(opts?: { categorySlug?: string }): Promise<CourseListItem[]> {
-  const baseSelect = "id, slug, title, description, duration, added_at, category_id, categories(slug)";
-  let query = supabaseAdmin
-    .from("courses")
-    .select(baseSelect)
-    .order("added_at", { ascending: false });
+  let categoryId: string | null = null;
   if (opts?.categorySlug) {
-    const { data: cat } = await supabaseAdmin.from("categories").select("id").eq("slug", opts.categorySlug).maybeSingle();
-    if (cat) query = query.eq("category_id", (cat as { id: string }).id);
+    const { data: cat } = await dbMaybeSingle(async () =>
+      await sql<{ id: string }[]>`
+        SELECT id FROM categories WHERE slug = ${opts.categorySlug!} LIMIT 2
+      `
+    );
+    if (cat) categoryId = cat.id;
     else return [];
   }
-  let result = await query.eq("status", STATUS_PUBLISHED);
-  if (result.error?.code === "42703") {
-    result = await query.eq("published", true);
-  }
-  if (result.error?.code === "42703") {
-    query = supabaseAdmin.from("courses").select("id, slug, title, description, duration, added_at, category_id, categories(slug)").order("added_at", { ascending: false });
-    if (opts?.categorySlug) {
-      const { data: cat } = await supabaseAdmin.from("categories").select("id").eq("slug", opts.categorySlug).maybeSingle();
-      if (cat) query = query.eq("category_id", (cat as { id: string }).id);
-      else return [];
+
+  let result = await dbResult(async () => {
+    if (categoryId) {
+      return await sql<CourseListRow[]>`
+        SELECT c.id, c.slug, c.title, c.description, c.duration, c.added_at, c.category_id,
+          CASE WHEN cat.id IS NULL THEN NULL ELSE json_build_object('slug', cat.slug) END AS categories
+        FROM courses c
+        LEFT JOIN categories cat ON cat.id = c.category_id
+        WHERE c.status = ${STATUS_PUBLISHED} AND c.category_id = ${categoryId}
+        ORDER BY c.added_at DESC
+      `;
     }
-    result = await query.eq("published", true);
+    return await sql<CourseListRow[]>`
+      SELECT c.id, c.slug, c.title, c.description, c.duration, c.added_at, c.category_id,
+        CASE WHEN cat.id IS NULL THEN NULL ELSE json_build_object('slug', cat.slug) END AS categories
+      FROM courses c
+      LEFT JOIN categories cat ON cat.id = c.category_id
+      WHERE c.status = ${STATUS_PUBLISHED}
+      ORDER BY c.added_at DESC
+    `;
+  });
+
+  if (isUndefinedColumnError(result.error)) {
+    result = await dbResult(async () => {
+      if (categoryId) {
+        return await sql<CourseListRow[]>`
+          SELECT c.id, c.slug, c.title, c.description, c.duration, c.added_at, c.category_id,
+            CASE WHEN cat.id IS NULL THEN NULL ELSE json_build_object('slug', cat.slug) END AS categories
+          FROM courses c
+          LEFT JOIN categories cat ON cat.id = c.category_id
+          WHERE c.published = true AND c.category_id = ${categoryId}
+          ORDER BY c.added_at DESC
+        `;
+      }
+      return await sql<CourseListRow[]>`
+        SELECT c.id, c.slug, c.title, c.description, c.duration, c.added_at, c.category_id,
+          CASE WHEN cat.id IS NULL THEN NULL ELSE json_build_object('slug', cat.slug) END AS categories
+        FROM courses c
+        LEFT JOIN categories cat ON cat.id = c.category_id
+        WHERE c.published = true
+        ORDER BY c.added_at DESC
+      `;
+    });
   }
+
   const { data, error } = result;
 
   if (error) return [];
-  let rows = ((data ?? []) as unknown) as Array<{
-    id: string;
-    slug: string;
-    title: string;
-    description: string;
-    duration: string;
-    added_at: string;
-    category_id: string | null;
-    categories?: { slug: string } | Array<{ slug: string }> | null;
-  }>;
+  let rows = ((data ?? []) as unknown) as CourseListRow[];
   if (rows.length === 0) return [];
 
   const getCategorySlug = (categories: { slug: string } | Array<{ slug: string }> | null | undefined) =>
@@ -125,30 +242,46 @@ export async function getPublishedCoursesFromDb(opts?: { categorySlug?: string }
 
   if (rows.some((r) => r.category_id && !getCategorySlug(r.categories))) {
     const categoryIds = [...new Set(rows.map((r) => r.category_id).filter(Boolean))] as string[];
-    const { data: catRows } = await supabaseAdmin.from("categories").select("id, slug").in("id", categoryIds);
-    const slugById = new Map((catRows ?? []).map((c: { id: string; slug: string }) => [c.id, c.slug]));
-    rows = rows.map((r) => {
-      if (!r.category_id || r.categories) return r;
-      const categorySlug = slugById.get(r.category_id);
-      if (!categorySlug) return r;
-      return { ...r, categories: { slug: categorySlug } };
-    });
+    if (categoryIds.length > 0) {
+      const { data: catRows } = await dbResult(async () =>
+        await sql<{ id: string; slug: string }[]>`
+          SELECT id, slug FROM categories WHERE id = ANY(${categoryIds})
+        `
+      );
+      const slugById = new Map((catRows ?? []).map((c) => [c.id, c.slug]));
+      rows = rows.map((r) => {
+        if (!r.category_id || r.categories) return r;
+        const categorySlug = slugById.get(r.category_id);
+        if (!categorySlug) return r;
+        return { ...r, categories: { slug: categorySlug } };
+      });
+    }
   }
 
   const ids = rows.map((c) => c.id);
+  if (ids.length === 0) return [];
+
   const [{ data: moduleRows }, { data: missionRows }] = await Promise.all([
-    supabaseAdmin.from("course_modules").select("course_id").in("course_id", ids),
-    supabaseAdmin.from("course_missions").select("course_id").in("course_id", ids),
+    dbResult(async () =>
+      await sql<{ course_id: string }[]>`
+        SELECT course_id FROM course_modules WHERE course_id = ANY(${ids})
+      `
+    ),
+    dbResult(async () =>
+      await sql<{ course_id: string }[]>`
+        SELECT course_id FROM course_missions WHERE course_id = ANY(${ids})
+      `
+    ),
   ]);
 
   const moduleCountById: Record<string, number> = {};
   for (const row of moduleRows ?? []) {
-    const id = (row as { course_id: string }).course_id;
+    const id = row.course_id;
     moduleCountById[id] = (moduleCountById[id] ?? 0) + 1;
   }
   const missionCountById: Record<string, number> = {};
   for (const row of missionRows ?? []) {
-    const id = (row as { course_id: string }).course_id;
+    const id = row.course_id;
     missionCountById[id] = (missionCountById[id] ?? 0) + 1;
   }
 
@@ -166,10 +299,9 @@ export async function getPublishedCoursesFromDb(opts?: { categorySlug?: string }
   }));
 }
 
-/** Détail d'une formation par slug (Supabase). Par défaut uniquement publiées ; si includeUnpublished, toute formation. */
-const COURSE_SELECT_COLS =
-  "id, slug, title, description, duration, quiz_spreadsheet_id, published, status, created_by, onboarding_title, onboarding_content, onboarding_presentation_embed_url, onboarding_quiz_sheet_name";
+type CourseDetailRow = Record<string, unknown>;
 
+/** Détail d'une formation par slug (Postgres). Par défaut uniquement publiées ; si includeUnpublished, toute formation. */
 export async function getCourseBySlugFromDb(
   slug: string,
   opts?: { includeUnpublished?: boolean }
@@ -187,33 +319,69 @@ export async function getCourseBySlugFromDb(
   onboardingPresentationEmbedUrl?: string | null;
   onboardingQuizSheetName?: string | null;
 } | null> {
-  let query = supabaseAdmin
-    .from("courses")
-    .select(COURSE_SELECT_COLS)
-    .eq("slug", slug);
   if (!opts?.includeUnpublished) {
     // Priorité au nouveau schéma (status='published'), puis fallback legacy (published=true)
     // pour éviter les 404 sur des formations publiées avant la migration de status.
-    let result = await query.eq("status", STATUS_PUBLISHED).maybeSingle();
-    if (result.error?.code === "42703") {
-      result = await query.eq("published", true).maybeSingle();
+    let result = await dbMaybeSingle(async () =>
+      await sql<CourseDetailRow[]>`
+        SELECT id, slug, title, description, duration, quiz_spreadsheet_id, published, status,
+          created_by, onboarding_title, onboarding_content, onboarding_presentation_embed_url,
+          onboarding_quiz_sheet_name
+        FROM courses
+        WHERE slug = ${slug} AND status = ${STATUS_PUBLISHED}
+        LIMIT 2
+      `
+    );
+    if (isUndefinedColumnError(result.error)) {
+      result = await dbMaybeSingle(async () =>
+        await sql<CourseDetailRow[]>`
+          SELECT id, slug, title, description, duration, quiz_spreadsheet_id, published, status,
+            created_by, onboarding_title, onboarding_content, onboarding_presentation_embed_url,
+            onboarding_quiz_sheet_name
+          FROM courses
+          WHERE slug = ${slug} AND published = true
+          LIMIT 2
+        `
+      );
     } else if (!result.error && !result.data) {
-      const legacy = await query.eq("published", true).maybeSingle();
+      const legacy = await dbMaybeSingle(async () =>
+        await sql<CourseDetailRow[]>`
+          SELECT id, slug, title, description, duration, quiz_spreadsheet_id, published, status,
+            created_by, onboarding_title, onboarding_content, onboarding_presentation_embed_url,
+            onboarding_quiz_sheet_name
+          FROM courses
+          WHERE slug = ${slug} AND published = true
+          LIMIT 2
+        `
+      );
       if (!legacy.error && legacy.data) {
         result = legacy;
       }
     }
     if (result.error || !result.data) return null;
-    const course = result.data as Record<string, unknown>;
-    return await buildCourseDetailResult(course);
+    return await buildCourseDetailResult(result.data as Record<string, unknown>);
   }
-  let result = await query.maybeSingle();
-  if (result.error?.code === "42703") {
-    const fallback = await supabaseAdmin
-      .from("courses")
-      .select("id, slug, title, description, duration, quiz_spreadsheet_id, published, onboarding_title, onboarding_content, onboarding_presentation_embed_url")
-      .eq("slug", slug)
-      .maybeSingle();
+
+  let result = await dbMaybeSingle(async () =>
+    await sql<CourseDetailRow[]>`
+      SELECT id, slug, title, description, duration, quiz_spreadsheet_id, published, status,
+        created_by, onboarding_title, onboarding_content, onboarding_presentation_embed_url,
+        onboarding_quiz_sheet_name
+      FROM courses
+      WHERE slug = ${slug}
+      LIMIT 2
+    `
+  );
+  if (isUndefinedColumnError(result.error)) {
+    const fallback = await dbMaybeSingle(async () =>
+      await sql<CourseDetailRow[]>`
+        SELECT id, slug, title, description, duration, quiz_spreadsheet_id, published,
+          onboarding_title, onboarding_content, onboarding_presentation_embed_url
+        FROM courses
+        WHERE slug = ${slug}
+        LIMIT 2
+      `
+    );
     if (fallback.error || !fallback.data) return null;
     const course = fallback.data as Record<string, unknown>;
     (course as { status?: string }).status = (course.published as boolean) ? "published" : "draft";
@@ -240,27 +408,41 @@ async function buildCourseDetailResult(course: Record<string, unknown>): Promise
 } | null> {
   const courseId = course.id as string;
 
-  let modulesRows: Record<string, unknown>[] | null = null;
-  let modRes: { data: unknown; error: { code?: string; message?: string } | null } = await supabaseAdmin
-    .from("course_modules")
-    .select("module_slug, title, description, duration, video_embed_url, document_embed_url, presentation_embed_url, quiz_sheet_id, quiz_sheet_name, mission_id_slug, content, position, min_quiz_score")
-    .eq("course_id", courseId)
-    .order("position", { ascending: true });
-  const modSchemaErr = modRes.error?.code === "42703" || modRes.error?.code === "PGRST204" || modRes.error?.message?.includes("schema cache") || modRes.error?.message?.includes("quiz_sheet_name") || modRes.error?.message?.includes("min_quiz_score");
+  let modRes = await dbResult(async () =>
+    await sql<Record<string, unknown>[]>`
+      SELECT module_slug, title, description, duration, video_embed_url, document_embed_url,
+        presentation_embed_url, quiz_sheet_id, quiz_sheet_name, mission_id_slug, content,
+        position, min_quiz_score
+      FROM course_modules
+      WHERE course_id = ${courseId}
+      ORDER BY position ASC
+    `
+  );
+  const modSchemaErr =
+    isUndefinedColumnError(modRes.error) ||
+    modRes.error?.message?.includes("quiz_sheet_name") ||
+    modRes.error?.message?.includes("min_quiz_score");
   if (modRes.error && modSchemaErr) {
-    modRes = await supabaseAdmin
-      .from("course_modules")
-      .select("module_slug, title, description, duration, video_embed_url, document_embed_url, presentation_embed_url, quiz_sheet_id, mission_id_slug, content, position")
-      .eq("course_id", courseId)
-      .order("position", { ascending: true });
+    modRes = await dbResult(async () =>
+      await sql<Record<string, unknown>[]>`
+        SELECT module_slug, title, description, duration, video_embed_url, document_embed_url,
+          presentation_embed_url, quiz_sheet_id, mission_id_slug, content, position
+        FROM course_modules
+        WHERE course_id = ${courseId}
+        ORDER BY position ASC
+      `
+    );
   }
-  modulesRows = (modRes.data as Record<string, unknown>[] | null) ?? null;
+  const modulesRows = (modRes.data as Record<string, unknown>[] | null) ?? null;
   const quizSpreadsheetId = (course.quiz_spreadsheet_id as string | null) ?? undefined;
 
-  const { data: missionsRows } = await supabaseAdmin
-    .from("course_missions")
-    .select("mission_slug, title, context, objective, instructions, deliverable")
-    .eq("course_id", courseId);
+  const { data: missionsRows } = await dbResult(async () =>
+    await sql<Record<string, unknown>[]>`
+      SELECT mission_slug, title, context, objective, instructions, deliverable
+      FROM course_missions
+      WHERE course_id = ${courseId}
+    `
+  );
 
   const modules: (ModuleData & { quizSheetName?: string })[] = (modulesRows ?? []).map((m: Record<string, unknown>) => ({
     id: String(m.module_slug),

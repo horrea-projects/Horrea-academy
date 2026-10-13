@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import sql, { dbResult, dbSingle, isUndefinedColumnError } from "@/lib/db";
 
 async function requireAdmin() {
   const user = await currentUser();
@@ -10,37 +10,52 @@ async function requireAdmin() {
   return user;
 }
 
+type CategoryRow = Record<string, unknown>;
+
 export async function GET() {
   const user = await requireAdmin();
   if (!user) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 
-  const selectCols = "id, slug, label, icon, onboarding_title, onboarding_content, onboarding_presentation_embed_url, onboarding_quiz_sheet_id, onboarding_quiz_sheet_name";
-  const selectColsWithoutQuiz = "id, slug, label, icon, onboarding_title, onboarding_content, onboarding_presentation_embed_url";
-  const selectColsMinimal = "id, slug, label, icon";
-  let result: { data: unknown; error: { code?: string; message?: string } | null } = await supabaseAdmin
-    .from("categories")
-    .select(`${selectCols}, parent_id, created_by, approved, status`)
-    .order("label");
+  let result = await dbResult(() =>
+    sql<CategoryRow[]>`
+      SELECT id, slug, label, icon, onboarding_title, onboarding_content,
+        onboarding_presentation_embed_url, onboarding_quiz_sheet_id,
+        onboarding_quiz_sheet_name, parent_id, created_by, approved, status
+      FROM categories
+      ORDER BY label
+    `
+  );
 
-  if (result.error && (result.error.code === "42703" || result.error.code === "PGRST204")) {
-    result = await supabaseAdmin
-      .from("categories")
-      .select(`${selectColsWithoutQuiz}, parent_id, created_by, approved, status`)
-      .order("label");
+  if (isUndefinedColumnError(result.error)) {
+    result = await dbResult(() =>
+      sql<CategoryRow[]>`
+        SELECT id, slug, label, icon, onboarding_title, onboarding_content,
+          onboarding_presentation_embed_url, parent_id, created_by, approved, status
+        FROM categories
+        ORDER BY label
+      `
+    );
   }
-  if (result.error && (result.error.code === "42703" || result.error.code === "PGRST204")) {
-    result = await supabaseAdmin
-      .from("categories")
-      .select(`${selectColsWithoutQuiz}, parent_id, created_by, approved`)
-      .order("label");
+  if (isUndefinedColumnError(result.error)) {
+    result = await dbResult(() =>
+      sql<CategoryRow[]>`
+        SELECT id, slug, label, icon, onboarding_title, onboarding_content,
+          onboarding_presentation_embed_url, parent_id, created_by, approved
+        FROM categories
+        ORDER BY label
+      `
+    );
   }
-  if (result.error && (result.error.code === "42703" || result.error.code === "PGRST204")) {
-    result = await supabaseAdmin
-      .from("categories")
-      .select(selectColsMinimal)
-      .order("label");
+  if (isUndefinedColumnError(result.error)) {
+    result = await dbResult(() =>
+      sql<CategoryRow[]>`
+        SELECT id, slug, label, icon
+        FROM categories
+        ORDER BY label
+      `
+    );
   }
   if (result.error) {
     console.error(result.error);
@@ -75,12 +90,20 @@ async function resolveCategoryAuthors(
 ): Promise<Array<Record<string, unknown>>> {
   const clerkIds = [...new Set((rows.map((r) => r.created_by).filter(Boolean) as string[]))];
   if (clerkIds.length === 0) return rows.map((r) => ({ ...r, author_email: null }));
-  const { data: appUsers } = await supabaseAdmin
-    .from("app_users")
-    .select("clerk_id, email")
-    .in("clerk_id", clerkIds);
-  const emailByClerk = Object.fromEntries(((appUsers ?? []) as { clerk_id: string; email: string }[]).map((u) => [u.clerk_id, u.email]));
-  return rows.map((r) => ({ ...r, author_email: r.created_by ? emailByClerk[r.created_by] ?? r.created_by : null }));
+  const { data: appUsers } = await dbResult(() =>
+    sql<{ clerk_id: string; email: string }[]>`
+      SELECT clerk_id, email
+      FROM app_users
+      WHERE clerk_id = ANY(${clerkIds})
+    `
+  );
+  const emailByClerk = Object.fromEntries(
+    ((appUsers ?? []) as { clerk_id: string; email: string }[]).map((u) => [u.clerk_id, u.email])
+  );
+  return rows.map((r) => ({
+    ...r,
+    author_email: r.created_by ? emailByClerk[r.created_by] ?? r.created_by : null,
+  }));
 }
 
 async function addCategoryStats(
@@ -89,10 +112,13 @@ async function addCategoryStats(
   const categoryIds = rows.map((r) => r.id).filter(Boolean) as string[];
   if (categoryIds.length === 0) return rows.map((r) => ({ ...r, course_count: 0, completed_users_count: 0 }));
 
-  const { data: coursesData } = await supabaseAdmin
-    .from("courses")
-    .select("id, slug, category_id")
-    .in("category_id", categoryIds);
+  const { data: coursesData } = await dbResult(() =>
+    sql<{ id: string; slug: string; category_id: string }[]>`
+      SELECT id, slug, category_id
+      FROM courses
+      WHERE category_id = ANY(${categoryIds})
+    `
+  );
   const courses = (coursesData ?? []) as { id: string; slug: string; category_id: string }[];
 
   const courseCountByCategoryId: Record<string, number> = {};
@@ -104,13 +130,22 @@ async function addCategoryStats(
   const courseIds = courses.map((c) => c.id);
   const [moduleCountRes, progressRes] = await Promise.all([
     courseIds.length > 0
-      ? supabaseAdmin.from("course_modules").select("course_id").in("course_id", courseIds)
-      : Promise.resolve({ data: [] as { course_id: string }[] }),
-    supabaseAdmin
-      .from("user_progress")
-      .select("email, course_slug, module_id")
-      .eq("type", "module")
-      .eq("status", "completed"),
+      ? dbResult(() =>
+          sql<{ course_id: string }[]>`
+            SELECT course_id
+            FROM course_modules
+            WHERE course_id = ANY(${courseIds})
+          `
+        )
+      : Promise.resolve({ data: [] as { course_id: string }[], error: null }),
+    dbResult(() =>
+      sql<{ email: string; course_slug: string; module_id: string }[]>`
+        SELECT email, course_slug, module_id
+        FROM user_progress
+        WHERE type = ${"module"}
+          AND status = ${"completed"}
+      `
+    ),
   ]);
 
   const moduleCountByCourseId: Record<string, number> = {};
@@ -118,7 +153,6 @@ async function addCategoryStats(
     const cid = (row as { course_id: string }).course_id;
     moduleCountByCourseId[cid] = (moduleCountByCourseId[cid] ?? 0) + 1;
   }
-  const slugByCourseId = new Map(courses.map((c) => [c.id, c.slug]));
   const totalModulesBySlug: Record<string, number> = {};
   for (const c of courses) {
     totalModulesBySlug[c.slug] = moduleCountByCourseId[c.id] ?? 0;
@@ -164,14 +198,27 @@ export async function POST(req: NextRequest) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 
-  let body: { slug: string; label: string; icon: string; parent_id?: string | null; status?: string; created_by?: string | null; onboarding_title?: string; onboarding_content?: string; onboarding_presentation_embed_url?: string; onboarding_quiz_sheet_id?: string; onboarding_quiz_sheet_name?: string };
+  let body: {
+    slug: string;
+    label: string;
+    icon: string;
+    parent_id?: string | null;
+    status?: string;
+    created_by?: string | null;
+    onboarding_title?: string;
+    onboarding_content?: string;
+    onboarding_presentation_embed_url?: string;
+    onboarding_quiz_sheet_id?: string;
+    onboarding_quiz_sheet_name?: string;
+  };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Body JSON invalide" }, { status: 400 });
   }
 
-  const slug = (body.slug ?? "").trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") || "categorie";
+  const slug =
+    (body.slug ?? "").trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") || "categorie";
   const label = (body.label ?? "").trim() || slug;
   const icon = (body.icon ?? "").trim() || "book";
   const rawParent = body.parent_id?.trim() || null;
@@ -184,9 +231,7 @@ export async function POST(req: NextRequest) {
   const onboarding_quiz_sheet_id = body.onboarding_quiz_sheet_id?.trim() || null;
   const onboarding_quiz_sheet_name = body.onboarding_quiz_sheet_name?.trim() || null;
 
-  const selectCols = "id, slug, label, icon, onboarding_title, onboarding_content, onboarding_presentation_embed_url, onboarding_quiz_sheet_id, onboarding_quiz_sheet_name";
-  const selectColsWithoutQuiz = "id, slug, label, icon, onboarding_title, onboarding_content, onboarding_presentation_embed_url";
-  const insertPayload = {
+  const insertPayload: Record<string, unknown> = {
     slug,
     label,
     icon,
@@ -199,15 +244,33 @@ export async function POST(req: NextRequest) {
     created_by,
     status,
     approved: status === "published",
-  } as Record<string, unknown>;
+  };
 
-  let result: { data: unknown; error: { code?: string; message?: string } | null } = await supabaseAdmin
-    .from("categories")
-    .insert(insertPayload)
-    .select(`${selectCols}, parent_id, created_by, approved, status`)
-    .single();
+  let result = await dbSingle(() =>
+    sql<CategoryRow[]>`
+      INSERT INTO categories ${sql(
+        insertPayload,
+        "slug",
+        "label",
+        "icon",
+        "onboarding_title",
+        "onboarding_content",
+        "onboarding_presentation_embed_url",
+        "onboarding_quiz_sheet_id",
+        "onboarding_quiz_sheet_name",
+        "parent_id",
+        "created_by",
+        "status",
+        "approved"
+      )}
+      RETURNING id, slug, label, icon, onboarding_title, onboarding_content,
+        onboarding_presentation_embed_url, onboarding_quiz_sheet_id,
+        onboarding_quiz_sheet_name, parent_id, created_by, approved, status
+    `
+  );
 
-  const schemaError = result.error?.code === "42703" || result.error?.code === "PGRST204" || result.error?.message?.includes("schema cache") || result.error?.message?.includes("approved");
+  const schemaError =
+    isUndefinedColumnError(result.error) || result.error?.message?.includes("approved");
   if (schemaError) {
     const fallbackPayload: Record<string, unknown> = {
       slug,
@@ -221,40 +284,63 @@ export async function POST(req: NextRequest) {
     };
     if (parent_id != null) fallbackPayload.parent_id = parent_id;
     if (created_by != null) fallbackPayload.created_by = created_by;
-    result = await supabaseAdmin
-      .from("categories")
-      .insert(fallbackPayload)
-      .select(selectCols)
-      .single();
-    if (result.error && (result.error.code === "42703" || result.error.code === "PGRST204")) {
+
+    const fallbackKeys = Object.keys(fallbackPayload);
+    result = await dbSingle(() =>
+      sql<CategoryRow[]>`
+        INSERT INTO categories ${sql(fallbackPayload, ...fallbackKeys)}
+        RETURNING id, slug, label, icon, onboarding_title, onboarding_content,
+          onboarding_presentation_embed_url, onboarding_quiz_sheet_id,
+          onboarding_quiz_sheet_name
+      `
+    );
+    if (isUndefinedColumnError(result.error)) {
       delete fallbackPayload.onboarding_quiz_sheet_id;
       delete fallbackPayload.onboarding_quiz_sheet_name;
-      result = await supabaseAdmin.from("categories").insert(fallbackPayload).select(selectColsWithoutQuiz).single();
+      const keys2 = Object.keys(fallbackPayload);
+      result = await dbSingle(() =>
+        sql<CategoryRow[]>`
+          INSERT INTO categories ${sql(fallbackPayload, ...keys2)}
+          RETURNING id, slug, label, icon, onboarding_title, onboarding_content,
+            onboarding_presentation_embed_url
+        `
+      );
     }
-    if (result.error && (result.error.code === "42703" || result.error.code === "PGRST204")) {
+    if (isUndefinedColumnError(result.error)) {
       delete fallbackPayload.parent_id;
       delete fallbackPayload.created_by;
-      result = await supabaseAdmin.from("categories").insert(fallbackPayload).select(selectColsWithoutQuiz).single();
+      const keys3 = Object.keys(fallbackPayload);
+      result = await dbSingle(() =>
+        sql<CategoryRow[]>`
+          INSERT INTO categories ${sql(fallbackPayload, ...keys3)}
+          RETURNING id, slug, label, icon, onboarding_title, onboarding_content,
+            onboarding_presentation_embed_url
+        `
+      );
     }
     if (result.error?.code === "23505") {
-      const { data: existing } = await supabaseAdmin.from("categories").select(selectCols).eq("slug", slug).single();
-      if (existing) return NextResponse.json({ category: { ...existing, parent_id: null, created_by: user.id, approved: true, status: "draft" } });
+      return NextResponse.json({ error: "Une catégorie avec ce slug existe déjà." }, { status: 400 });
     }
   }
 
   if (result.error) {
-    if (result.error.code === "23505") return NextResponse.json({ error: "Une catégorie avec ce slug existe déjà." }, { status: 400 });
+    if (result.error.code === "23505") {
+      return NextResponse.json({ error: "Une catégorie avec ce slug existe déjà." }, { status: 400 });
+    }
     console.error(result.error);
     return NextResponse.json({ error: result.error.message }, { status: 500 });
   }
 
   const data = result.data as Record<string, unknown>;
+  const resolvedStatus = (data?.status as string) ?? status ?? "draft";
   const category = {
     ...data,
     parent_id: data?.parent_id ?? null,
     created_by: data?.created_by ?? user.id,
-    approved: (data?.approved as boolean) ?? true,
-    status: (data?.status as string) ?? status,
+    approved:
+      (data?.approved as boolean) ??
+      resolvedStatus === "published",
+    status: resolvedStatus,
   };
   return NextResponse.json({ category });
 }
