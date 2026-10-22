@@ -1,0 +1,33 @@
+# Dependencies & build output
+node_modules
+.next
+out
+build
+coverage
+
+# Git / IDE / local env
+.git
+.gitignore
+.cursor
+.cursorrules
+.idea
+.vscode
+.env
+.env.*
+*.env
+*.pem
+*-credentials.json
+*service-account*.json
+credentials.json
+
+# Docs & unused deploy surfaces (not needed in image)
+docs
+README.md
+netlify
+*.md
+
+# Locks / package managers not used by this image
+package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
